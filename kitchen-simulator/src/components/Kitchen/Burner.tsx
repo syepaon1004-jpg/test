@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useGameStore } from '../../stores/gameStore'
 import type { WokState } from '../../types/database.types'
+import { WOK_TEMP } from '../../types/database.types'
 
 const COOKING_ACTIONS = [
   { type: 'STIR_FRY', label: '볶기', icon: '🍳' },
@@ -33,14 +34,35 @@ const COOKING_BURN_TIME_MS = 30000 // 30초에 타버림
 const OVERHEAT_COOLDOWN_MS = 10000 // OVERHEATING 상태에서 10초 후 CLEAN
 
 export default function Burner({ burnerNumber }: BurnerProps) {
-  const { woks, toggleBurner, serve, validateAndAdvanceAction, updateWok, washWok } = useGameStore()
+  const { woks, toggleBurner, serve, validateAndAdvanceAction, updateWok, washWok, startStirFry, stopStirFry } = useGameStore()
   const wok = woks.find((w) => w.burnerNumber === burnerNumber)
   if (!wok) return null
 
   const handleAction = (actionType: string) => {
-    const result = validateAndAdvanceAction(burnerNumber, actionType)
-    if (result.burned) {
-      // 타버림 처리는 validateAndAdvanceAction에서 함
+    // 볶기 액션인 경우 온도 체크
+    if (actionType === 'STIR_FRY') {
+      const success = startStirFry(burnerNumber)
+      if (!success) {
+        alert(`웍 온도가 너무 낮습니다! (현재: ${Math.round(wok.temperature)}°C, 필요: ${WOK_TEMP.MIN_STIR_FRY}°C 이상)`)
+        return
+      }
+      
+      // 볶기 액션 검증
+      const result = validateAndAdvanceAction(burnerNumber, actionType)
+      
+      // 볶기 종료 (2초 후)
+      setTimeout(() => {
+        stopStirFry(burnerNumber)
+      }, 2000)
+      
+      if (result.burned) {
+        // 타버림 처리는 validateAndAdvanceAction에서 함
+      }
+    } else {
+      const result = validateAndAdvanceAction(burnerNumber, actionType)
+      if (result.burned) {
+        // 타버림 처리는 validateAndAdvanceAction에서 함
+      }
     }
   }
 
@@ -188,6 +210,56 @@ export default function Burner({ burnerNumber }: BurnerProps) {
             boxShadow: 'inset 0 -10px 20px rgba(0,0,0,0.3), inset 0 5px 15px rgba(255,255,255,0.3), 0 10px 30px rgba(0,0,0,0.2)'
           } : {}
         }>
+          {/* 볶기 중일 때 불 효과 (불질/웍질) */}
+          <AnimatePresence>
+            {wok.isStirFrying && (
+              <>
+                <motion.div
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ 
+                    scale: [1, 1.3, 1.1, 1.4, 1.2],
+                    opacity: [0.8, 1, 0.9, 1, 0.85],
+                    rotate: [0, 5, -5, 3, -3],
+                  }}
+                  exit={{ scale: 0, opacity: 0 }}
+                  transition={{ duration: 0.3, repeat: Infinity, repeatDelay: 0.1 }}
+                  className="absolute -top-8 left-1/2 -translate-x-1/2 text-7xl z-20"
+                  style={{ filter: 'drop-shadow(0 0 20px rgba(255,100,0,0.8))' }}
+                >
+                  🔥
+                </motion.div>
+                <motion.div
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ 
+                    scale: [1.1, 1.4, 1.2, 1.5, 1.3],
+                    opacity: [0.7, 0.9, 0.8, 1, 0.75],
+                    rotate: [0, -7, 7, -5, 5],
+                  }}
+                  exit={{ scale: 0, opacity: 0 }}
+                  transition={{ duration: 0.35, delay: 0.1, repeat: Infinity, repeatDelay: 0.15 }}
+                  className="absolute -top-12 left-1/4 text-6xl z-20"
+                  style={{ filter: 'drop-shadow(0 0 15px rgba(255,150,0,0.7))' }}
+                >
+                  🔥
+                </motion.div>
+                <motion.div
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ 
+                    scale: [1, 1.2, 1.15, 1.3, 1.1],
+                    opacity: [0.75, 0.95, 0.85, 1, 0.8],
+                    rotate: [0, 8, -8, 6, -6],
+                  }}
+                  exit={{ scale: 0, opacity: 0 }}
+                  transition={{ duration: 0.32, delay: 0.05, repeat: Infinity, repeatDelay: 0.12 }}
+                  className="absolute -top-10 right-1/4 text-6xl z-20"
+                  style={{ filter: 'drop-shadow(0 0 15px rgba(255,120,0,0.6))' }}
+                >
+                  🔥
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+
           {wok.currentMenu && (
             <span className="text-white text-xs font-bold text-center px-2 drop-shadow-lg z-10">
               {wok.currentMenu}
@@ -197,6 +269,17 @@ export default function Burner({ burnerNumber }: BurnerProps) {
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-6xl filter drop-shadow-2xl">💀</span>
             </div>
+          )}
+          
+          {/* 스모킹 포인트 효과 */}
+          {wok.temperature >= WOK_TEMP.SMOKING_POINT && wok.state !== 'BURNED' && !wok.isStirFrying && (
+            <motion.div
+              animate={{ opacity: [0.3, 0.7, 0.4], y: [-10, -30, -50] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="absolute -top-10 text-4xl z-5"
+            >
+              💨
+            </motion.div>
           )}
         </div>
         <div className={`text-xs mt-1 font-bold px-2 py-1 rounded ${
@@ -209,6 +292,18 @@ export default function Burner({ burnerNumber }: BurnerProps) {
            wok.state === 'BURNED' ? '💀 타버림!' : 
            wok.state === 'OVERHEATING' ? '⚠️ 과열!' :
            '✨ 깨끗'}
+        </div>
+
+        {/* 온도 표시 */}
+        <div className={`text-xs mt-1 px-3 py-1 rounded-full font-bold ${
+          wok.temperature >= WOK_TEMP.SMOKING_POINT ? 'bg-orange-500 text-white animate-pulse' :
+          wok.temperature >= WOK_TEMP.MIN_STIR_FRY ? 'bg-yellow-400 text-gray-800' :
+          wok.temperature >= 100 ? 'bg-blue-200 text-gray-700' :
+          'bg-gray-300 text-gray-600'
+        }`}>
+          🌡️ {Math.round(wok.temperature)}°C
+          {wok.temperature >= WOK_TEMP.SMOKING_POINT && ' 🔥'}
+          {wok.temperature >= WOK_TEMP.MIN_STIR_FRY && wok.temperature < WOK_TEMP.SMOKING_POINT && ' ✓'}
         </div>
       </motion.div>
 
@@ -320,17 +415,29 @@ export default function Burner({ burnerNumber }: BurnerProps) {
           </div>
           
           <div className="flex flex-wrap gap-1 justify-center bg-white/70 p-2 rounded-lg border border-gray-300">
-            {COOKING_ACTIONS.map((a) => (
-              <button
-                key={a.type}
-                type="button"
-                onClick={() => handleAction(a.type)}
-                className="p-2 rounded bg-white border-2 border-gray-300 hover:border-orange-400 hover:bg-orange-50 text-lg shadow-md hover:shadow-lg transition-all"
-                title={a.label}
-              >
-                {a.icon}
-              </button>
-            ))}
+            {COOKING_ACTIONS.map((a) => {
+              const isStirFry = a.type === 'STIR_FRY'
+              const canStirFry = wok.temperature >= WOK_TEMP.MIN_STIR_FRY
+              const isDisabled = isStirFry && !canStirFry
+
+              return (
+                <button
+                  key={a.type}
+                  type="button"
+                  onClick={() => handleAction(a.type)}
+                  disabled={isDisabled}
+                  className={`p-2 rounded border-2 text-lg shadow-md transition-all ${
+                    isDisabled
+                      ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed opacity-50'
+                      : 'bg-white border-gray-300 hover:border-orange-400 hover:bg-orange-50 hover:shadow-lg'
+                  }`}
+                  title={isStirFry && !canStirFry ? `온도 부족 (${Math.round(wok.temperature)}°C < ${WOK_TEMP.MIN_STIR_FRY}°C)` : a.label}
+                >
+                  {a.icon}
+                  {isStirFry && !canStirFry && <span className="absolute -top-1 -right-1 text-xs">🚫</span>}
+                </button>
+              )
+            })}
             <button
               type="button"
               onClick={() => {

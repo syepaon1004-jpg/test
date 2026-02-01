@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useGameStore } from '../../stores/gameStore'
 
@@ -36,6 +36,25 @@ export default function BatchAmountInputPopup({
     })
     return initial
   })
+
+  // input refs (첫 번째 식재료의 첫 번째 웍)
+  const firstInputRef = useRef<HTMLInputElement>(null)
+
+  // 첫 input에 자동 포커스
+  useEffect(() => {
+    firstInputRef.current?.focus()
+  }, [])
+
+  // ESC 키로 닫기, Enter 키로 제출
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCancel()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onCancel])
 
   const handleAmountChange = (ingredientId: string, burnerNumber: number, value: string) => {
     const num = parseInt(value) || 0
@@ -81,6 +100,13 @@ export default function BatchAmountInputPopup({
     }
 
     onConfirm(assignments)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleConfirm()
+    }
   }
 
   return (
@@ -133,30 +159,36 @@ export default function BatchAmountInputPopup({
 
                 {/* 화구별 입력 */}
                 <div className="grid grid-cols-3 gap-3">
-                  {woksWithMenu.map((wok) => (
-                    <div key={wok.burnerNumber} className="flex flex-col gap-1">
-                      <label className="text-xs font-bold text-gray-600">
-                        화구 {wok.burnerNumber}
-                      </label>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          value={amounts[ing.id]?.[wok.burnerNumber] || 0}
-                          onChange={(e) => handleAmountChange(ing.id, wok.burnerNumber, e.target.value)}
-                          className="flex-1 px-2 py-2 border-2 border-gray-300 rounded text-center font-bold text-gray-800 focus:border-blue-500 focus:outline-none"
-                        />
-                        <span className="text-xs text-gray-600 font-medium">{ing.standardUnit}</span>
+                  {woksWithMenu.map((wok, wokIndex) => {
+                    const isFirstInput = ingredients.indexOf(ing) === 0 && wokIndex === 0
+                    return (
+                      <div key={wok.burnerNumber} className="flex flex-col gap-1">
+                        <label className="text-xs font-bold text-gray-600">
+                          화구 {wok.burnerNumber}
+                        </label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            ref={isFirstInput ? firstInputRef : undefined}
+                            type="number"
+                            min="0"
+                            value={amounts[ing.id]?.[wok.burnerNumber] || 0}
+                            onChange={(e) => handleAmountChange(ing.id, wok.burnerNumber, e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            className="flex-1 px-2 py-2 border-2 border-gray-300 rounded text-center font-bold text-gray-800 focus:border-blue-500 focus:outline-none"
+                          />
+                          <span className="text-xs text-gray-600 font-medium">{ing.standardUnit}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickFill(ing.id, wok.burnerNumber, ing.standardAmount)}
+                          className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
+                          tabIndex={-1}
+                        >
+                          기준량
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleQuickFill(ing.id, wok.burnerNumber, ing.standardAmount)}
-                        className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
-                      >
-                        기준량
-                      </button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
 
                 {/* 현재 메뉴 표시 */}

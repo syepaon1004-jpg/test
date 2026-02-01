@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { calculateGridArea } from '../utils/grid'
 
 interface GridIngredient {
@@ -35,6 +35,19 @@ export default function GridPopup({
   enableMultiSelect = false,
 }: GridPopupProps) {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
+
+  // ESC 키로 닫기
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose()
+      } else if (e.key === 'Enter' && enableMultiSelect && selectedItems.size > 0) {
+        handleConfirmSelection()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose, enableMultiSelect, selectedItems])
 
   const handleItemClick = (ing: GridIngredient) => {
     if (enableMultiSelect) {

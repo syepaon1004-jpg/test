@@ -142,7 +142,21 @@ export interface Wok {
   stepStartTime: number | null
   burnerOnSince: number | null
   addedIngredients: string[] // 현재 스텝에서 투입한 재료 SKU 목록
+  temperature: number // 웍 현재 온도 (°C)
+  isStirFrying: boolean // 볶기 중인지 여부
+  stirFryStartTime: number | null // 볶기 시작 시간
 }
+
+// 웍 온도 관련 상수
+export const WOK_TEMP = {
+  AMBIENT: 25, // 실온
+  SMOKING_POINT: 200, // 스모킹 포인트 (기름이 연기 나는 온도)
+  MIN_STIR_FRY: 180, // 볶기 최소 온도
+  MAX_SAFE: 250, // 안전 최대 온도
+  HEAT_RATE: 30, // 초당 온도 상승률 (°C/s)
+  COOL_RATE: 5, // 초당 온도 하강률 (°C/s, 불 끄면)
+  NATURAL_COOL: 2, // 자연 냉각률 (°C/s, 식재료 투입 시)
+} as const
 
 export type MenuOrderStatus = 'WAITING' | 'COOKING' | 'COMPLETED'
 

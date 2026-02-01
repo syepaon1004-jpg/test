@@ -14,11 +14,54 @@ import type {
   BurnerUsageLog,
   GameLevel,
 } from '../types/database.types'
+import { WOK_TEMP } from '../types/database.types'
 
 const INITIAL_WOKS: Wok[] = [
-  { burnerNumber: 1, isOn: false, state: 'CLEAN', position: 'AT_BURNER', currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, burnerOnSince: null, addedIngredients: [] },
-  { burnerNumber: 2, isOn: false, state: 'CLEAN', position: 'AT_BURNER', currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, burnerOnSince: null, addedIngredients: [] },
-  { burnerNumber: 3, isOn: false, state: 'CLEAN', position: 'AT_BURNER', currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, burnerOnSince: null, addedIngredients: [] },
+  { 
+    burnerNumber: 1, 
+    isOn: false, 
+    state: 'CLEAN', 
+    position: 'AT_BURNER', 
+    currentMenu: null, 
+    currentOrderId: null, 
+    currentStep: 0, 
+    stepStartTime: null, 
+    burnerOnSince: null, 
+    addedIngredients: [],
+    temperature: WOK_TEMP.AMBIENT,
+    isStirFrying: false,
+    stirFryStartTime: null,
+  },
+  { 
+    burnerNumber: 2, 
+    isOn: false, 
+    state: 'CLEAN', 
+    position: 'AT_BURNER', 
+    currentMenu: null, 
+    currentOrderId: null, 
+    currentStep: 0, 
+    stepStartTime: null, 
+    burnerOnSince: null, 
+    addedIngredients: [],
+    temperature: WOK_TEMP.AMBIENT,
+    isStirFrying: false,
+    stirFryStartTime: null,
+  },
+  { 
+    burnerNumber: 3, 
+    isOn: false, 
+    state: 'CLEAN', 
+    position: 'AT_BURNER', 
+    currentMenu: null, 
+    currentOrderId: null, 
+    currentStep: 0, 
+    stepStartTime: null, 
+    burnerOnSince: null, 
+    addedIngredients: [],
+    temperature: WOK_TEMP.AMBIENT,
+    isStirFrying: false,
+    stirFryStartTime: null,
+  },
 ]
 
 const TARGET_MENUS = 3
@@ -67,6 +110,9 @@ interface GameStore {
   addMenuToQueue: (menuName: string) => void
   assignMenuToWok: (menuId: string, burnerNumber: number) => void
   updateWok: (burnerNumber: number, updates: Partial<Wok>) => void
+  updateWokTemperatures: () => void // 모든 웍의 온도 계산 및 업데이트
+  startStirFry: (burnerNumber: number) => boolean // 볶기 시작
+  stopStirFry: (burnerNumber: number) => void // 볶기 중지
   washWok: (burnerNumber: number) => void
   toggleBurner: (burnerNumber: number) => void
   serve: (burnerNumber: number) => boolean
@@ -216,6 +262,66 @@ export const useGameStore = create<GameStore>((set, get) => ({
   updateWok: (burnerNumber, updates) => {
     set((s) => ({
       woks: s.woks.map((w) => (w.burnerNumber === burnerNumber ? { ...w, ...updates } : w)),
+    }))
+  },
+
+  // 모든 웍의 온도 계산 및 업데이트 (1초마다 호출)
+  updateWokTemperatures: () => {
+    const now = Date.now()
+    set((s) => ({
+      woks: s.woks.map((wok) => {
+        let newTemp = wok.temperature
+
+        if (wok.isOn) {
+          // 불이 켜져 있으면 온도 상승
+          newTemp = Math.min(wok.temperature + WOK_TEMP.HEAT_RATE, WOK_TEMP.MAX_SAFE)
+        } else {
+          // 불이 꺼져 있으면 온도 하강
+          newTemp = Math.max(wok.temperature - WOK_TEMP.COOL_RATE, WOK_TEMP.AMBIENT)
+        }
+
+        // 볶기 중이면 약간의 냉각 효과 (식재료가 열을 흡수)
+        if (wok.isStirFrying) {
+          newTemp = Math.max(newTemp - WOK_TEMP.NATURAL_COOL, WOK_TEMP.AMBIENT)
+        }
+
+        return {
+          ...wok,
+          temperature: newTemp,
+        }
+      }),
+    }))
+  },
+
+  // 볶기 시작 (온도 체크)
+  startStirFry: (burnerNumber) => {
+    const { woks } = get()
+    const wok = woks.find((w) => w.burnerNumber === burnerNumber)
+    if (!wok) return false
+
+    // 최소 볶기 온도 확인
+    if (wok.temperature < WOK_TEMP.MIN_STIR_FRY) {
+      return false
+    }
+
+    set((s) => ({
+      woks: s.woks.map((w) =>
+        w.burnerNumber === burnerNumber
+          ? { ...w, isStirFrying: true, stirFryStartTime: Date.now() }
+          : w
+      ),
+    }))
+    return true
+  },
+
+  // 볶기 중지
+  stopStirFry: (burnerNumber) => {
+    set((s) => ({
+      woks: s.woks.map((w) =>
+        w.burnerNumber === burnerNumber
+          ? { ...w, isStirFrying: false, stirFryStartTime: null }
+          : w
+      ),
     }))
   },
 

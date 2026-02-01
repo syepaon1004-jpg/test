@@ -57,6 +57,7 @@ export default function GamePlay() {
     assignMenuToWok,
     validateAndAdvanceIngredient,
     recordBurnerUsage,
+    updateWokTemperatures,
     endGame,
     getCurrentStepIngredients,
     fridgeViewState,
@@ -70,6 +71,7 @@ export default function GamePlay() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const burnerUsageRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const tempUpdateRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     if (!isPlaying) return
@@ -108,6 +110,15 @@ export default function GamePlay() {
       if (burnerUsageRef.current) clearInterval(burnerUsageRef.current)
     }
   }, [isPlaying, recordBurnerUsage])
+
+  // 웍 온도 업데이트 (1초마다)
+  useEffect(() => {
+    if (!isPlaying) return
+    tempUpdateRef.current = setInterval(() => updateWokTemperatures(), 1000)
+    return () => {
+      if (tempUpdateRef.current) clearInterval(tempUpdateRef.current)
+    }
+  }, [isPlaying, updateWokTemperatures])
 
   useEffect(() => {
     if (completedMenus >= targetMenus) {
