@@ -31,6 +31,8 @@ const INITIAL_WOKS: Wok[] = [
     temperature: WOK_TEMP.AMBIENT,
     isStirFrying: false,
     stirFryStartTime: null,
+    heatLevel: 2,
+    stirFryCount: 0,
   },
   { 
     burnerNumber: 2, 
@@ -46,6 +48,8 @@ const INITIAL_WOKS: Wok[] = [
     temperature: WOK_TEMP.AMBIENT,
     isStirFrying: false,
     stirFryStartTime: null,
+    heatLevel: 2,
+    stirFryCount: 0,
   },
   { 
     burnerNumber: 3, 
@@ -61,6 +65,8 @@ const INITIAL_WOKS: Wok[] = [
     temperature: WOK_TEMP.AMBIENT,
     isStirFrying: false,
     stirFryStartTime: null,
+    heatLevel: 2,
+    stirFryCount: 0,
   },
 ]
 
@@ -111,6 +117,7 @@ interface GameStore {
   assignMenuToWok: (menuId: string, burnerNumber: number) => void
   updateWok: (burnerNumber: number, updates: Partial<Wok>) => void
   updateWokTemperatures: () => void // 모든 웍의 온도 계산 및 업데이트
+  setHeatLevel: (burnerNumber: number, level: number) => void // 불 세기 조절
   startStirFry: (burnerNumber: number) => boolean // 볶기 시작
   stopStirFry: (burnerNumber: number) => void // 볶기 중지
   washWok: (burnerNumber: number) => void
@@ -243,6 +250,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               isOn: true,
               burnerOnSince: Date.now(),
               addedIngredients: [], // 초기화
+              stirFryCount: 0, // 볶기 횟수 초기화
             }
           : w
       ),
@@ -273,9 +281,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         let newTemp = wok.temperature
 
         if (wok.isOn) {
-          // 지수 곡선으로 온도 상승 (현실적인 가열)
+          // 불 세기별 가열률 적용
+          const heatMultiplier = WOK_TEMP.HEAT_MULTIPLIER[wok.heatLevel as 1 | 2 | 3] || 1.0
+          
+          // 초반은 빠르게, 후반은 지수적으로 느리게 (더 강화된 곡선)
           const tempDiff = WOK_TEMP.MAX_SAFE - wok.temperature
-          const heatRate = WOK_TEMP.BASE_HEAT_RATE * (tempDiff / (WOK_TEMP.MAX_SAFE - WOK_TEMP.AMBIENT))
+          const tempRatio = tempDiff / (WOK_TEMP.MAX_SAFE - WOK_TEMP.AMBIENT)
+          // 지수를 3으로 증가하여 후반 감속을 더 크게
+          const heatRate = WOK_TEMP.BASE_HEAT_RATE * heatMultiplier * Math.pow(tempRatio, 3)
+          
           newTemp = Math.min(wok.temperature + heatRate, WOK_TEMP.MAX_SAFE)
         } else {
           // 불이 꺼져 있으면 온도 하강
@@ -316,6 +330,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             addedIngredients: [],
             isStirFrying: false,
             stirFryStartTime: null,
+            stirFryCount: 0,
           }
         } else if (newTemp >= WOK_TEMP.OVERHEATING && newTemp < WOK_TEMP.BURNED) {
           // 240~260°C → 과열
@@ -335,6 +350,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
           state: newState,
         }
       }),
+    }))
+  },
+
+  // 불 세기 조절
+  setHeatLevel: (burnerNumber, level) => {
+    if (level < 1 || level > 3) return
+    set((s) => ({
+      woks: s.woks.map((w) =>
+        w.burnerNumber === burnerNumber
+          ? { ...w, heatLevel: level }
+          : w
+      ),
     }))
   },
 
@@ -401,6 +428,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 temperature: WOK_TEMP.AMBIENT, // 온도 초기화
                 isStirFrying: false,
                 stirFryStartTime: null,
+                stirFryCount: 0, // 볶기 횟수 초기화
               }
             : w
         ),
@@ -917,6 +945,77 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const limitMs = (step.time_limit_seconds ?? 999) * 1000
     const timingCorrect = !wok.stepStartTime || Date.now() - wok.stepStartTime <= limitMs
 
+    // 볶기 액션 처리 - 첫 번째는 레시피 진행, 두 번째부터는 온도 조절용
+    if (actionType === 'STIR_FRY') {
+      if (wok.stirFryCount === 0 && isCorrectAction) {
+        // 첫 번째 볶기 - 레시피 진행
+        const tempDrop = WOK_TEMP.ACTION_TEMP.STIR_FRY
+        const newTemp = Math.max(WOK_TEMP.AMBIENT, wok.temperature - tempDrop)
+        
+        logAction({
+          actionType,
+          menuName: wok.currentMenu,
+          burnerNumber,
+          isCorrect: isCorrectAction && timingCorrect,
+          timingCorrect,
+          message: `화구${burnerNumber}: 볶기 완료 (레시피 진행)`,
+        })
+
+        if (!timingCorrect) {
+          const orderId = wok.currentOrderId
+          set((s) => ({
+            woks: s.woks.map((w) =>
+              w.burnerNumber === burnerNumber 
+                ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [], stirFryCount: 0 } 
+                : w
+            ),
+            menuQueue: orderId 
+              ? s.menuQueue.map((o) =>
+                  o.id === orderId
+                    ? { ...o, status: 'WAITING' as const, assignedBurner: null }
+                    : o
+                )
+              : s.menuQueue,
+          }))
+          return { ok: false, burned: true }
+        }
+
+        // 다음 스텝으로 진행
+        set((s) => ({
+          woks: s.woks.map((w) =>
+            w.burnerNumber === burnerNumber
+              ? { 
+                  ...w, 
+                  currentStep: w.currentStep + 1, 
+                  stepStartTime: Date.now(),
+                  burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
+                  temperature: newTemp,
+                  stirFryCount: w.stirFryCount + 1,
+                  addedIngredients: [], // 다음 스텝 시작 시 재료 목록 초기화
+                }
+              : w
+          ),
+        }))
+        return { ok: true }
+      } else {
+        // 두 번째 이상 볶기 - 온도 조절용
+        const tempDrop = WOK_TEMP.ACTION_TEMP.STIR_FRY
+        const newTemp = Math.max(WOK_TEMP.AMBIENT, wok.temperature - tempDrop)
+        
+        console.log(`화구${burnerNumber}: 추가 볶기 (온도 조절용) ${Math.round(wok.temperature)}°C → ${Math.round(newTemp)}°C`)
+        
+        set((s) => ({
+          woks: s.woks.map((w) =>
+            w.burnerNumber === burnerNumber
+              ? { ...w, temperature: newTemp, stirFryCount: w.stirFryCount + 1 }
+              : w
+          ),
+        }))
+        return { ok: true }
+      }
+    }
+
+    // 일반 액션 처리
     logAction({
       actionType,
       menuName: wok.currentMenu,
@@ -930,14 +1029,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     
     // 액션별 온도 하락
     let tempDrop = 0
-    if (actionType === 'STIR_FRY') {
-      tempDrop = WOK_TEMP.ACTION_TEMP.STIR_FRY
-    } else if (actionType === 'FLIP') {
+    if (actionType === 'FLIP') {
       tempDrop = WOK_TEMP.ACTION_TEMP.FLIP
     } else if (actionType === 'ADD_WATER') {
       tempDrop = WOK_TEMP.ACTION_TEMP.ADD_WATER
-    } else if (actionType === 'ADD_BROTH') {
-      tempDrop = WOK_TEMP.ACTION_TEMP.ADD_BROTH
     }
     
     const newTemp = Math.max(WOK_TEMP.AMBIENT, wok.temperature - tempDrop)
@@ -950,7 +1045,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set((s) => ({
         woks: s.woks.map((w) =>
           w.burnerNumber === burnerNumber 
-            ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [] } 
+            ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [], stirFryCount: 0 } 
             : w
         ),
         menuQueue: orderId 
@@ -964,7 +1059,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return { ok: false, burned: true }
     }
 
-    // 액션 성공 시 타이머 리셋 (웍질로 재료 타는 것 방지)
+    // 액션 성공 시 타이머 리셋
     set((s) => ({
       woks: s.woks.map((w) =>
         w.burnerNumber === burnerNumber
@@ -972,8 +1067,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
               ...w, 
               currentStep: w.currentStep + 1, 
               stepStartTime: Date.now(),
-              burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince, // 불 켜져있으면 타이머 리셋
-              temperature: newTemp, // 온도 반영
+              burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
+              temperature: newTemp,
+              addedIngredients: [], // 다음 스텝 시작 시 재료 목록 초기화
             }
           : w
       ),

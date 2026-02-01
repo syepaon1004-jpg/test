@@ -145,6 +145,8 @@ export interface Wok {
   temperature: number // 웍 현재 온도 (°C)
   isStirFrying: boolean // 볶기 중인지 여부
   stirFryStartTime: number | null // 볶기 시작 시간
+  heatLevel: number // 불 세기 (1: 약불, 2: 중불, 3: 강불)
+  stirFryCount: number // 현재 스텝에서 볶기 횟수
 }
 
 // 웍 온도 관련 상수
@@ -155,8 +157,15 @@ export const WOK_TEMP = {
   OVERHEATING: 240, // 과열 온도
   BURNED: 260, // 타버림 온도
   MAX_SAFE: 280, // 절대 최대 온도
-  BASE_HEAT_RATE: 30, // 기본 온도 상승률 (°C/s)
+  BASE_HEAT_RATE: 21, // 기본 온도 상승률 (°C/s) - 0.7배로 조정 (30 * 0.7)
   COOL_RATE: 5, // 초당 온도 하강률 (°C/s, 불 끄면)
+  
+  // 불 세기별 가열 배율
+  HEAT_MULTIPLIER: {
+    1: 0.6, // 약불
+    2: 1.0, // 중불
+    3: 1.5, // 강불
+  },
   
   // 재료 투입 시 온도 하락
   COOLING: {
@@ -174,7 +183,6 @@ export const WOK_TEMP = {
     STIR_FRY: 10, // 볶기 (-10°C)
     FLIP: 8, // 뒤집기 (-8°C)
     ADD_WATER: 60, // 물 넣기 (-60°C)
-    ADD_BROTH: 50, // 육수 넣기 (-50°C)
   },
 } as const
 

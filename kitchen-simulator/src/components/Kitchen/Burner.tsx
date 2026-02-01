@@ -7,7 +7,6 @@ import { WOK_TEMP } from '../../types/database.types'
 const COOKING_ACTIONS = [
   { type: 'STIR_FRY', label: '볶기', icon: '🍳' },
   { type: 'ADD_WATER', label: '물넣기', icon: '💧' },
-  { type: 'ADD_BROTH', label: '육수넣기', icon: '🍲' },
   { type: 'FLIP', label: '뒤집기', icon: '🔄' },
 ] as const
 
@@ -24,7 +23,7 @@ const stateColors: Record<WokState, string> = {
 }
 
 export default function Burner({ burnerNumber }: BurnerProps) {
-  const { woks, toggleBurner, serve, validateAndAdvanceAction, updateWok, washWok, startStirFry, stopStirFry } = useGameStore()
+  const { woks, toggleBurner, serve, validateAndAdvanceAction, updateWok, washWok, startStirFry, stopStirFry, setHeatLevel } = useGameStore()
   const wok = woks.find((w) => w.burnerNumber === burnerNumber)
   if (!wok) return null
 
@@ -157,9 +156,9 @@ export default function Burner({ burnerNumber }: BurnerProps) {
             boxShadow: 'inset 0 -10px 20px rgba(0,0,0,0.3), inset 0 5px 15px rgba(255,255,255,0.3), 0 10px 30px rgba(0,0,0,0.2)'
           } : {}
         }>
-          {/* 볶기 중일 때 불 효과 (불질/웍질) */}
+          {/* 볶기 중일 때 불 효과 (불질/웍질) - 온도 체크 추가 */}
           <AnimatePresence>
-            {wok.isStirFrying && (
+            {wok.isStirFrying && wok.temperature >= WOK_TEMP.MIN_STIR_FRY && (
               <>
                 <motion.div
                   initial={{ scale: 0, opacity: 0 }}
@@ -314,18 +313,41 @@ export default function Burner({ burnerNumber }: BurnerProps) {
         </button>
       ) : (
         <>
-          {/* 일반 불 켜기/끄기 버튼 */}
-          <button
-            type="button"
-            onClick={() => toggleBurner(burnerNumber)}
-            className={`px-5 py-2 rounded-lg text-xs font-bold shadow-lg transition-all ${
-              wok.isOn 
-                ? 'bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white' 
-                : 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white'
-            }`}
-          >
-            {wok.isOn ? '🔥 불 끄기' : '🔥 불 켜기'}
-          </button>
+          {/* 불 켜기/끄기 버튼 + 불 세기 조절 */}
+          <div className="flex flex-col gap-1 items-center">
+            <button
+              type="button"
+              onClick={() => toggleBurner(burnerNumber)}
+              className={`px-5 py-2 rounded-lg text-xs font-bold shadow-lg transition-all ${
+                wok.isOn 
+                  ? 'bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white' 
+                  : 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white'
+              }`}
+            >
+              {wok.isOn ? '🔥 불 끄기' : '🔥 불 켜기'}
+            </button>
+            
+            {/* 불 세기 조절 */}
+            {wok.isOn && (
+              <div className="flex gap-1 items-center bg-white/80 px-2 py-1 rounded border border-gray-300">
+                <span className="text-[9px] text-gray-600 font-bold">불 세기:</span>
+                {[1, 2, 3].map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setHeatLevel(burnerNumber, level)}
+                    className={`px-2 py-0.5 text-[9px] font-bold rounded transition-all ${
+                      wok.heatLevel === level
+                        ? 'bg-orange-500 text-white shadow-md'
+                        : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                    }`}
+                  >
+                    {level === 1 ? '약' : level === 2 ? '중' : '강'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           
           {wok.currentMenu && (
         <div className="flex flex-col gap-1 items-center">
