@@ -65,8 +65,8 @@ export default function Burner({ burnerNumber }: BurnerProps) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-2 relative pt-4">
-      {/* 온도 게이지 (화구 위) */}
+    <div className="flex flex-col items-center gap-2 relative pt-4 pb-2">
+      {/* 온도 게이지 (최상단, 고정) */}
       <div className="w-full max-w-[180px] mb-1">
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs font-bold text-gray-700">🌡️ 온도</span>
@@ -131,12 +131,14 @@ export default function Burner({ burnerNumber }: BurnerProps) {
         )}
       </div>
 
-      {/* 웍 (애니메이션) - 밝은 스테인리스 웍 */}
-      <motion.div
-        animate={wokAnimation[wok.position]}
-        transition={{ duration: 0.8, ease: 'easeInOut' }}
-        className="absolute top-[90px] z-10 flex flex-col items-center"
-      >
+      {/* 웍과 화구 영역 (relative container) */}
+      <div className="relative w-full flex flex-col items-center" style={{ minHeight: '180px' }}>
+        {/* 웍 (애니메이션) - 밝은 스테인리스 웍 */}
+        <motion.div
+          animate={wokAnimation[wok.position]}
+          transition={{ duration: 0.8, ease: 'easeInOut' }}
+          className="absolute top-0 z-10 flex flex-col items-center"
+        >
         <div className={`w-[150px] h-[150px] rounded-full border-4 flex items-center justify-center shadow-xl transition relative ${
           wok.state === 'BURNED' 
             ? 'border-red-900 bg-gradient-to-br from-black via-gray-900 to-black animate-pulse shadow-[0_0_40px_rgba(0,0,0,0.9)]'
@@ -276,8 +278,9 @@ export default function Burner({ burnerNumber }: BurnerProps) {
       <span className="text-xs text-gray-700 font-bold px-3 py-1 bg-gray-200/80 rounded-full border border-gray-300">
         화구{burnerNumber}
       </span>
+      </div>
 
-      {/* 상태별 안내 및 액션 */}
+      {/* 컨트롤 버튼 영역 (웍/화구 아래에 배치) */}
       {wok.state === 'DIRTY' || wok.state === 'BURNED' ? (
         <div className="text-center">
           <p className="text-xs text-white font-bold mb-2 px-2 py-1 bg-red-500 rounded shadow-md">
