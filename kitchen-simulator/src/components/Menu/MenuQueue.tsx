@@ -38,7 +38,7 @@ export default function MenuQueue({ onAssignToWok, selectedBurner, onSelectMenu,
         {menuQueue.length === 0 && (
           <p className="text-gray-500 text-xs py-1">메뉴 대기중...</p>
         )}
-        {menuQueue.map((order, index) => {
+        {menuQueue.map((order) => {
           const elapsedTime = (elapsedSeconds - order.enteredAt) * 1000
           const minutes = Math.floor(elapsedTime / 60000)
           const seconds = Math.floor((elapsedTime % 60000) / 1000)
