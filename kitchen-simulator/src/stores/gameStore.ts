@@ -273,21 +273,66 @@ export const useGameStore = create<GameStore>((set, get) => ({
         let newTemp = wok.temperature
 
         if (wok.isOn) {
-          // 불이 켜져 있으면 온도 상승
-          newTemp = Math.min(wok.temperature + WOK_TEMP.HEAT_RATE, WOK_TEMP.MAX_SAFE)
+          // 지수 곡선으로 온도 상승 (현실적인 가열)
+          const tempDiff = WOK_TEMP.MAX_SAFE - wok.temperature
+          const heatRate = WOK_TEMP.BASE_HEAT_RATE * (tempDiff / (WOK_TEMP.MAX_SAFE - WOK_TEMP.AMBIENT))
+          newTemp = Math.min(wok.temperature + heatRate, WOK_TEMP.MAX_SAFE)
         } else {
           // 불이 꺼져 있으면 온도 하강
           newTemp = Math.max(wok.temperature - WOK_TEMP.COOL_RATE, WOK_TEMP.AMBIENT)
         }
 
-        // 볶기 중이면 약간의 냉각 효과 (식재료가 열을 흡수)
-        if (wok.isStirFrying) {
-          newTemp = Math.max(newTemp - WOK_TEMP.NATURAL_COOL, WOK_TEMP.AMBIENT)
+        // 온도 기반 상태 자동 전환
+        let newState = wok.state
+        if (newTemp >= WOK_TEMP.BURNED && wok.state !== 'BURNED') {
+          // 260°C 이상 → 타버림
+          newState = 'BURNED'
+          console.warn(`화구${wok.burnerNumber}: 🔥 타버림! (온도: ${Math.round(newTemp)}°C)`)
+          
+          // 메뉴 실패 처리
+          const orderId = wok.currentOrderId
+          if (orderId) {
+            setTimeout(() => {
+              useGameStore.setState((st) => ({
+                menuQueue: st.menuQueue.map((o) =>
+                  o.id === orderId
+                    ? { ...o, status: 'WAITING' as const, assignedBurner: null }
+                    : o
+                ),
+              }))
+            }, 0)
+          }
+          
+          return {
+            ...wok,
+            temperature: newTemp,
+            state: newState,
+            isOn: false,
+            burnerOnSince: null,
+            currentMenu: null,
+            currentOrderId: null,
+            currentStep: 0,
+            stepStartTime: null,
+            addedIngredients: [],
+            isStirFrying: false,
+            stirFryStartTime: null,
+          }
+        } else if (newTemp >= WOK_TEMP.OVERHEATING && newTemp < WOK_TEMP.BURNED) {
+          // 240~260°C → 과열
+          if (wok.state !== 'OVERHEATING' && wok.state !== 'BURNED') {
+            newState = 'OVERHEATING'
+            console.warn(`화구${wok.burnerNumber}: ⚠️ 과열! (온도: ${Math.round(newTemp)}°C)`)
+          }
+        } else if (newTemp < WOK_TEMP.OVERHEATING && wok.state === 'OVERHEATING') {
+          // 240°C 미만 → 정상 복귀
+          newState = 'CLEAN'
+          console.log(`화구${wok.burnerNumber}: ✅ 정상 복귀 (온도: ${Math.round(newTemp)}°C)`)
         }
 
         return {
           ...wok,
           temperature: newTemp,
+          state: newState,
         }
       }),
     }))
@@ -764,6 +809,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     if (!isCorrect) return false
 
+    // 재료 투입 시 온도 하락 (재료 특성에 따라)
+    let tempDrop = WOK_TEMP.COOLING.SEASONING // 기본값
+    
+    // 재료 카테고리 판단 (SKU 기반)
+    const skuLower = sku.toLowerCase()
+    if (skuLower.includes('양파') || skuLower.includes('애호박') || skuLower.includes('당근') || 
+        skuLower.includes('onion') || skuLower.includes('zucchini') || skuLower.includes('carrot')) {
+      tempDrop = WOK_TEMP.COOLING.VEGETABLE
+    } else if (skuLower.includes('새우') || skuLower.includes('오징어') || 
+               skuLower.includes('shrimp') || skuLower.includes('squid')) {
+      tempDrop = WOK_TEMP.COOLING.SEAFOOD
+    } else if (skuLower.includes('계란') || skuLower.includes('egg')) {
+      tempDrop = WOK_TEMP.COOLING.EGG
+    } else if (skuLower.includes('밥') || skuLower.includes('rice')) {
+      tempDrop = WOK_TEMP.COOLING.RICE
+    }
+    
+    // 온도 하락 적용
+    const newTemp = Math.max(WOK_TEMP.AMBIENT, wok.temperature - tempDrop)
+    console.log(`화구${burnerNumber}: 재료 투입으로 온도 하락 ${Math.round(wok.temperature)}°C → ${Math.round(newTemp)}°C (-${tempDrop}°C)`)
+
     // 투입한 재료 목록에 추가
     const newAddedIngredients = [...wok.addedIngredients, sku]
     
@@ -792,6 +858,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 stepStartTime: Date.now(),
                 burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
                 addedIngredients: [], // 다음 스텝 시작 시 초기화
+                temperature: newTemp, // 온도 반영
               }
             : w
         ),
@@ -807,6 +874,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 ...w, 
                 addedIngredients: newAddedIngredients,
                 burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
+                temperature: newTemp, // 온도 반영
               }
             : w
         ),
@@ -859,6 +927,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
 
     if (!isCorrectAction) return { ok: false }
+    
+    // 액션별 온도 하락
+    let tempDrop = 0
+    if (actionType === 'STIR_FRY') {
+      tempDrop = WOK_TEMP.ACTION_TEMP.STIR_FRY
+    } else if (actionType === 'FLIP') {
+      tempDrop = WOK_TEMP.ACTION_TEMP.FLIP
+    } else if (actionType === 'ADD_WATER') {
+      tempDrop = WOK_TEMP.ACTION_TEMP.ADD_WATER
+    } else if (actionType === 'ADD_BROTH') {
+      tempDrop = WOK_TEMP.ACTION_TEMP.ADD_BROTH
+    }
+    
+    const newTemp = Math.max(WOK_TEMP.AMBIENT, wok.temperature - tempDrop)
+    if (tempDrop > 0) {
+      console.log(`화구${burnerNumber}: ${actionType} 실행으로 온도 하락 ${Math.round(wok.temperature)}°C → ${Math.round(newTemp)}°C (-${tempDrop}°C)`)
+    }
+    
     if (!timingCorrect) {
       const orderId = wok.currentOrderId
       set((s) => ({
@@ -887,6 +973,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               currentStep: w.currentStep + 1, 
               stepStartTime: Date.now(),
               burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince, // 불 켜져있으면 타이머 리셋
+              temperature: newTemp, // 온도 반영
             }
           : w
       ),

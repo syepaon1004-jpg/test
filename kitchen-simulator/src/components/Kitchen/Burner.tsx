@@ -23,16 +23,6 @@ const stateColors: Record<WokState, string> = {
   OVERHEATING: 'bg-orange-600',
 }
 
-// 재료 없을 때 (빈 웍)
-const EMPTY_OVERHEAT_TIME_MS = 13000 // 13초부터 과열 경고
-const EMPTY_BURN_TIME_MS = 15000 // 15초에 타버림
-
-// 재료 있을 때 (조리 중)
-const COOKING_OVERHEAT_TIME_MS = 28000 // 28초부터 과열 경고
-const COOKING_BURN_TIME_MS = 30000 // 30초에 타버림
-
-const OVERHEAT_COOLDOWN_MS = 10000 // OVERHEATING 상태에서 10초 후 CLEAN
-
 export default function Burner({ burnerNumber }: BurnerProps) {
   const { woks, toggleBurner, serve, validateAndAdvanceAction, updateWok, washWok, startStirFry, stopStirFry } = useGameStore()
   const wok = woks.find((w) => w.burnerNumber === burnerNumber)
@@ -66,118 +56,6 @@ export default function Burner({ burnerNumber }: BurnerProps) {
     }
   }
 
-  // OVERHEATING → CLEAN 자동 전환 (불 끄면)
-  useEffect(() => {
-    if (wok.state !== 'OVERHEATING' || wok.isOn) return
-    
-    const timer = setTimeout(() => {
-      const currentWok = useGameStore.getState().woks.find((w) => w.burnerNumber === burnerNumber)
-      if (currentWok?.state === 'OVERHEATING' && !currentWok.isOn) {
-        console.log(`화구${burnerNumber}: 과열 해소, CLEAN 상태로 복귀`)
-        updateWok(burnerNumber, { state: 'CLEAN' })
-      }
-    }, OVERHEAT_COOLDOWN_MS)
-
-    return () => clearTimeout(timer)
-  }, [wok.state, wok.isOn, burnerNumber, updateWok])
-
-  // 불을 너무 오래 켜두면 과열 → 타버림
-  useEffect(() => {
-    if (!wok.isOn || !wok.burnerOnSince) return
-
-    const elapsed = Date.now() - wok.burnerOnSince
-    
-    // WET 상태에서는 타이머 제외 (WokDryingManager가 CLEAN으로 전환)
-    if (wok.state === 'WET') return
-
-    // CLEAN 상태에서만 과열/타버림 체크
-    if (wok.state === 'CLEAN' || wok.state === 'OVERHEATING') {
-      // 재료가 들어갔는지 판단 (currentMenu 있고 step > 0이면 재료 투입됨)
-      const hasIngredients = wok.currentMenu && wok.currentStep > 0
-      const overheatTime = hasIngredients ? COOKING_OVERHEAT_TIME_MS : EMPTY_OVERHEAT_TIME_MS
-      const burnTime = hasIngredients ? COOKING_BURN_TIME_MS : EMPTY_BURN_TIME_MS
-
-      const overheatRemaining = overheatTime - elapsed
-      const burnRemaining = burnTime - elapsed
-
-      let overheatTimer: ReturnType<typeof setTimeout> | null = null
-      let burnTimer: ReturnType<typeof setTimeout> | null = null
-
-      if (overheatRemaining > 0) {
-        overheatTimer = setTimeout(() => {
-          const currentWok = useGameStore.getState().woks.find((w) => w.burnerNumber === burnerNumber)
-          if (!currentWok?.isOn || currentWok.state === 'BURNED') return
-          console.warn(`화구${burnerNumber}: ⚠️ 과열 중! 2초 후 타버립니다!`)
-          updateWok(burnerNumber, { state: 'OVERHEATING' })
-        }, overheatRemaining)
-      } else if (wok.state === 'CLEAN') {
-        // 이미 58초 지남 → 즉시 OVERHEATING
-        updateWok(burnerNumber, { state: 'OVERHEATING' })
-      }
-
-      if (burnRemaining > 0) {
-        burnTimer = setTimeout(() => {
-          const state = useGameStore.getState()
-          const currentWok = state.woks.find((w) => w.burnerNumber === burnerNumber)
-          if (!currentWok?.isOn) return
-          console.warn(`화구${burnerNumber}: 🔥 타버림!`)
-          
-          const orderId = currentWok.currentOrderId
-          
-          // 웍 초기화
-          updateWok(burnerNumber, { 
-            state: 'BURNED', 
-            isOn: false, 
-            burnerOnSince: null,
-            currentMenu: null,
-            currentOrderId: null,
-            currentStep: 0,
-            stepStartTime: null,
-            addedIngredients: [],
-          })
-          
-          // 해당 주문을 WAITING으로 재배정 가능하게
-          if (orderId) {
-            useGameStore.setState((s) => ({
-              menuQueue: s.menuQueue.map((o) =>
-                o.id === orderId
-                  ? { ...o, status: 'WAITING' as const, assignedBurner: null }
-                  : o
-              ),
-            }))
-          }
-        }, burnRemaining)
-      } else {
-        // 이미 타버림 시간 지남 → 즉시 처리
-        const orderId = wok.currentOrderId
-        updateWok(burnerNumber, { 
-          state: 'BURNED', 
-          isOn: false, 
-          burnerOnSince: null,
-          currentMenu: null,
-          currentOrderId: null,
-          currentStep: 0,
-          stepStartTime: null,
-          addedIngredients: [],
-        })
-        if (orderId) {
-          useGameStore.setState((s) => ({
-            menuQueue: s.menuQueue.map((o) =>
-              o.id === orderId
-                ? { ...o, status: 'WAITING' as const, assignedBurner: null }
-                : o
-            ),
-          }))
-        }
-      }
-
-      return () => {
-        if (overheatTimer) clearTimeout(overheatTimer)
-        if (burnTimer) clearTimeout(burnTimer)
-      }
-    }
-  }, [wok.isOn, wok.burnerOnSince, wok.state, burnerNumber, updateWok])
-
   // 웍 위치에 따른 애니메이션
   const wokAnimation = {
     AT_BURNER: { x: 0, y: 0 },
@@ -187,7 +65,72 @@ export default function Burner({ burnerNumber }: BurnerProps) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-2 relative pt-20">
+    <div className="flex flex-col items-center gap-2 relative pt-6">
+      {/* 온도 게이지 (화구 위) */}
+      <div className="w-full max-w-[180px] mb-2">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs font-bold text-gray-700">🌡️ 온도</span>
+          <span className={`text-sm font-bold px-2 py-0.5 rounded ${
+            wok.temperature >= WOK_TEMP.BURNED ? 'bg-red-600 text-white animate-pulse' :
+            wok.temperature >= WOK_TEMP.OVERHEATING ? 'bg-orange-500 text-white animate-pulse' :
+            wok.temperature >= WOK_TEMP.SMOKING_POINT ? 'bg-orange-400 text-white' :
+            wok.temperature >= WOK_TEMP.MIN_STIR_FRY ? 'bg-yellow-400 text-gray-800' :
+            wok.temperature >= 100 ? 'bg-blue-200 text-gray-700' :
+            'bg-gray-300 text-gray-600'
+          }`}>
+            {Math.round(wok.temperature)}°C
+          </span>
+        </div>
+        
+        {/* 온도 바 */}
+        <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden border-2 border-gray-300 shadow-inner">
+          {/* 구간 표시 (배경) */}
+          <div className="absolute inset-0 flex">
+            <div className="flex-1 bg-gray-300" style={{ width: `${(WOK_TEMP.MIN_STIR_FRY / WOK_TEMP.MAX_SAFE) * 100}%` }}></div>
+            <div className="flex-1 bg-yellow-200" style={{ width: `${((WOK_TEMP.SMOKING_POINT - WOK_TEMP.MIN_STIR_FRY) / WOK_TEMP.MAX_SAFE) * 100}%` }}></div>
+            <div className="flex-1 bg-orange-200" style={{ width: `${((WOK_TEMP.OVERHEATING - WOK_TEMP.SMOKING_POINT) / WOK_TEMP.MAX_SAFE) * 100}%` }}></div>
+            <div className="flex-1 bg-red-200" style={{ width: `${((WOK_TEMP.MAX_SAFE - WOK_TEMP.OVERHEATING) / WOK_TEMP.MAX_SAFE) * 100}%` }}></div>
+          </div>
+          
+          {/* 실제 온도 바 */}
+          <div 
+            className={`absolute inset-y-0 left-0 transition-all duration-300 ${
+              wok.temperature >= WOK_TEMP.BURNED ? 'bg-gradient-to-r from-red-600 to-red-800' :
+              wok.temperature >= WOK_TEMP.OVERHEATING ? 'bg-gradient-to-r from-orange-500 to-red-500' :
+              wok.temperature >= WOK_TEMP.SMOKING_POINT ? 'bg-gradient-to-r from-yellow-400 to-orange-500' :
+              wok.temperature >= WOK_TEMP.MIN_STIR_FRY ? 'bg-gradient-to-r from-green-400 to-yellow-400' :
+              'bg-gradient-to-r from-blue-300 to-blue-400'
+            }`}
+            style={{ width: `${Math.min((wok.temperature / WOK_TEMP.MAX_SAFE) * 100, 100)}%` }}
+          ></div>
+        </div>
+        
+        {/* 온도 구간 레이블 */}
+        <div className="flex justify-between mt-1 text-[9px] text-gray-500 font-medium">
+          <span>{WOK_TEMP.AMBIENT}°</span>
+          <span className="text-yellow-600">{WOK_TEMP.MIN_STIR_FRY}°</span>
+          <span className="text-orange-600">{WOK_TEMP.SMOKING_POINT}°</span>
+          <span className="text-red-600">{WOK_TEMP.OVERHEATING}°</span>
+        </div>
+        
+        {/* 상태 표시 */}
+        {wok.temperature >= WOK_TEMP.BURNED && (
+          <div className="text-center mt-1 text-xs font-bold text-red-600 animate-bounce">
+            💀 타버림 위험!
+          </div>
+        )}
+        {wok.temperature >= WOK_TEMP.OVERHEATING && wok.temperature < WOK_TEMP.BURNED && (
+          <div className="text-center mt-1 text-xs font-bold text-orange-600 animate-pulse">
+            ⚠️ 과열 중! 온도를 낮추세요
+          </div>
+        )}
+        {wok.temperature >= WOK_TEMP.SMOKING_POINT && wok.temperature < WOK_TEMP.OVERHEATING && (
+          <div className="text-center mt-1 text-xs font-bold text-orange-500">
+            💨 스모킹 포인트
+          </div>
+        )}
+      </div>
+
       {/* 웍 (애니메이션) - 밝은 스테인리스 웍 */}
       <motion.div
         animate={wokAnimation[wok.position]}
@@ -292,18 +235,6 @@ export default function Burner({ burnerNumber }: BurnerProps) {
            wok.state === 'BURNED' ? '💀 타버림!' : 
            wok.state === 'OVERHEATING' ? '⚠️ 과열!' :
            '✨ 깨끗'}
-        </div>
-
-        {/* 온도 표시 */}
-        <div className={`text-xs mt-1 px-3 py-1 rounded-full font-bold ${
-          wok.temperature >= WOK_TEMP.SMOKING_POINT ? 'bg-orange-500 text-white animate-pulse' :
-          wok.temperature >= WOK_TEMP.MIN_STIR_FRY ? 'bg-yellow-400 text-gray-800' :
-          wok.temperature >= 100 ? 'bg-blue-200 text-gray-700' :
-          'bg-gray-300 text-gray-600'
-        }`}>
-          🌡️ {Math.round(wok.temperature)}°C
-          {wok.temperature >= WOK_TEMP.SMOKING_POINT && ' 🔥'}
-          {wok.temperature >= WOK_TEMP.MIN_STIR_FRY && wok.temperature < WOK_TEMP.SMOKING_POINT && ' ✓'}
         </div>
       </motion.div>
 

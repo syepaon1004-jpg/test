@@ -152,10 +152,30 @@ export const WOK_TEMP = {
   AMBIENT: 25, // 실온
   SMOKING_POINT: 200, // 스모킹 포인트 (기름이 연기 나는 온도)
   MIN_STIR_FRY: 180, // 볶기 최소 온도
-  MAX_SAFE: 250, // 안전 최대 온도
-  HEAT_RATE: 30, // 초당 온도 상승률 (°C/s)
+  OVERHEATING: 240, // 과열 온도
+  BURNED: 260, // 타버림 온도
+  MAX_SAFE: 280, // 절대 최대 온도
+  BASE_HEAT_RATE: 30, // 기본 온도 상승률 (°C/s)
   COOL_RATE: 5, // 초당 온도 하강률 (°C/s, 불 끄면)
-  NATURAL_COOL: 2, // 자연 냉각률 (°C/s, 식재료 투입 시)
+  
+  // 재료 투입 시 온도 하락
+  COOLING: {
+    VEGETABLE: 40, // 채소류 (양파, 애호박, 당근)
+    SEAFOOD: 45, // 해산물 (새우, 오징어)
+    EGG: 20, // 계란
+    RICE: 15, // 밥
+    SEASONING: 5, // 조미료
+    WATER: 60, // 물
+    BROTH: 50, // 육수
+  },
+  
+  // 액션별 온도 변화
+  ACTION_TEMP: {
+    STIR_FRY: 10, // 볶기 (-10°C)
+    FLIP: 8, // 뒤집기 (-8°C)
+    ADD_WATER: 60, // 물 넣기 (-60°C)
+    ADD_BROTH: 50, // 육수 넣기 (-50°C)
+  },
 } as const
 
 export type MenuOrderStatus = 'WAITING' | 'COOKING' | 'COMPLETED'
