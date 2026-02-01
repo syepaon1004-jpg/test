@@ -284,11 +284,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
           // 불 세기별 가열률 적용
           const heatMultiplier = WOK_TEMP.HEAT_MULTIPLIER[wok.heatLevel as 1 | 2 | 3] || 1.0
           
-          // 초반은 빠르게, 후반은 지수적으로 느리게 (더 강화된 곡선)
+          // 초반은 빠르게, 후반은 지수적으로 느리게
           const tempDiff = WOK_TEMP.MAX_SAFE - wok.temperature
           const tempRatio = tempDiff / (WOK_TEMP.MAX_SAFE - WOK_TEMP.AMBIENT)
-          // 지수를 3으로 증가하여 후반 감속을 더 크게
-          const heatRate = WOK_TEMP.BASE_HEAT_RATE * heatMultiplier * Math.pow(tempRatio, 3)
+          // 지수를 2로 설정 (완만한 곡선)
+          const heatRate = WOK_TEMP.BASE_HEAT_RATE * heatMultiplier * Math.pow(tempRatio, 2)
           
           newTemp = Math.min(wok.temperature + heatRate, WOK_TEMP.MAX_SAFE)
         } else {
