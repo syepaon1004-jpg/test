@@ -12,6 +12,7 @@ const FRIDGE_POSITIONS = [
 
 interface Props {
   onSelectIngredient: (ingredient: IngredientInventory) => void
+  onSelectMultiple?: (ingredients: any[]) => void
 }
 
 interface GridPopupState {
@@ -30,7 +31,7 @@ interface GridPopupState {
   }>
 }
 
-export default function FridgeZoomView({ onSelectIngredient }: Props) {
+export default function FridgeZoomView({ onSelectIngredient, onSelectMultiple }: Props) {
   const {
     fridgeViewState,
     closeFridgeView,
@@ -176,8 +177,17 @@ export default function FridgeZoomView({ onSelectIngredient }: Props) {
           gridRows={gridPopup.gridRows}
           gridCols={gridPopup.gridCols}
           ingredients={gridPopup.ingredients}
+          enableMultiSelect={true}
           onSelect={(ing) => {
             onSelectIngredient(ing.raw)
+            setGridPopup(null)
+            setSelectedBox(null)
+            closeFridgeView()
+          }}
+          onSelectMultiple={(selectedIngs) => {
+            if (onSelectMultiple) {
+              onSelectMultiple(selectedIngs)
+            }
             setGridPopup(null)
             setSelectedBox(null)
             closeFridgeView()

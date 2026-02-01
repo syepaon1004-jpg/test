@@ -16,6 +16,7 @@ import FridgeBox from '../components/Kitchen/FridgeBox'
 import FridgeZoomView from '../components/Kitchen/FridgeZoomView'
 import SeasoningCounter from '../components/Kitchen/SeasoningCounter'
 import AmountInputPopup from '../components/Kitchen/AmountInputPopup'
+import BatchAmountInputPopup from '../components/Kitchen/BatchAmountInputPopup'
 
 type AmountPopupState =
   | null
@@ -33,6 +34,17 @@ type AmountPopupState =
       requiredAmount: number
       requiredUnit: string
     }
+
+type BatchInputState = {
+  ingredients: Array<{
+    id: string
+    name: string
+    sku: string
+    standardAmount: number
+    standardUnit: string
+    raw: any
+  }>
+} | null
 
 export default function GamePlay() {
   const navigate = useNavigate()
@@ -53,6 +65,7 @@ export default function GamePlay() {
 
   const [selectedBurner, setSelectedBurner] = useState<number | null>(null)
   const [amountPopup, setAmountPopup] = useState<AmountPopupState>(null)
+  const [batchInputPopup, setBatchInputPopup] = useState<BatchInputState>(null)
   const [toast, setToast] = useState<string | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -139,6 +152,26 @@ export default function GamePlay() {
     })
   }
 
+  // 다중 식재료 선택 핸들러 (배치 입력 모드)
+  const handleSelectMultipleIngredients = (selectedIngredients: any[]) => {
+    const woksWithMenu = woks.filter((w) => w.currentMenu)
+    if (woksWithMenu.length === 0) {
+      showToast('먼저 메뉴를 배정하세요.')
+      return
+    }
+
+    setBatchInputPopup({
+      ingredients: selectedIngredients.map((ing) => ({
+        id: ing.id,
+        name: ing.name,
+        sku: ing.sku,
+        standardAmount: ing.amount,
+        standardUnit: ing.unit,
+        raw: ing.raw,
+      })),
+    })
+  }
+
   const handleSelectSeasoning = (seasoning: Seasoning, requiredAmount: number, requiredUnit: string) => {
     const woksWithMenu = woks.filter((w) => w.currentMenu)
     if (woksWithMenu.length === 0) {
@@ -206,6 +239,33 @@ export default function GamePlay() {
     }
     
     setAmountPopup(null)
+  }
+
+  // 배치 입력 확인 핸들러
+  const handleBatchConfirm = (assignments: Array<{ sku: string; burnerNumber: number; amount: number; raw: any }>) => {
+    const results: { burner: number; sku: string; ok: boolean }[] = []
+
+    assignments.forEach(({ sku, burnerNumber, amount, raw }) => {
+      const wok = woks.find((w) => w.burnerNumber === burnerNumber)
+      if (!wok?.currentMenu) return
+
+      const ok = validateAndAdvanceIngredient(burnerNumber, sku, amount, false)
+      results.push({ burner: burnerNumber, sku, ok })
+    })
+
+    // 결과 토스트
+    const successCount = results.filter((r) => r.ok).length
+    const failCount = results.filter((r) => !r.ok).length
+    
+    if (successCount > 0 && failCount === 0) {
+      showToast(`✅ 모두 정확합니다! (${successCount}개 투입)`)
+    } else if (successCount > 0) {
+      showToast(`⚠️ ${successCount}개 성공, ${failCount}개 오류`)
+    } else if (failCount > 0) {
+      showToast(`❌ 틀렸습니다! (${failCount}개 투입)`)
+    }
+
+    setBatchInputPopup(null)
   }
 
   const burnerUsageHistory = useGameStore((s) => s.burnerUsageHistory)
@@ -315,7 +375,10 @@ export default function GamePlay() {
 
           {/* 서랍냉장고 - 실버 스테인리스 서랍 스타일 */}
           <div className="w-full max-w-[700px] flex-1 flex items-end">
-            <DrawerFridge onSelectIngredient={handleSelectIngredient} />
+            <DrawerFridge 
+              onSelectIngredient={handleSelectIngredient}
+              onSelectMultiple={handleSelectMultipleIngredients}
+            />
           </div>
         </div>
 
@@ -379,7 +442,19 @@ export default function GamePlay() {
 
       {/* 4호박스 줌뷰 */}
       {fridgeViewState !== 'CLOSED' && (
-        <FridgeZoomView onSelectIngredient={handleSelectIngredient} />
+        <FridgeZoomView 
+          onSelectIngredient={handleSelectIngredient}
+          onSelectMultiple={handleSelectMultipleIngredients}
+        />
+      )}
+
+      {/* 배치 입력 팝업 */}
+      {batchInputPopup && (
+        <BatchAmountInputPopup
+          ingredients={batchInputPopup.ingredients}
+          onConfirm={handleBatchConfirm}
+          onCancel={() => setBatchInputPopup(null)}
+        />
       )}
     </div>
   )

@@ -7,6 +7,7 @@ const DRAWER_CODES = ['DRAWER_LT', 'DRAWER_RT', 'DRAWER_LB', 'DRAWER_RB']
 
 interface DrawerFridgeProps {
   onSelectIngredient: (ingredient: IngredientInventory) => void
+  onSelectMultiple?: (ingredients: any[]) => void
 }
 
 interface GridPopupState {
@@ -25,7 +26,7 @@ interface GridPopupState {
   }>
 }
 
-export default function DrawerFridge({ onSelectIngredient }: DrawerFridgeProps) {
+export default function DrawerFridge({ onSelectIngredient, onSelectMultiple }: DrawerFridgeProps) {
   const storageCache = useGameStore((s) => s.storageCache)
   const [gridPopup, setGridPopup] = useState<GridPopupState | null>(null)
 
@@ -110,8 +111,15 @@ export default function DrawerFridge({ onSelectIngredient }: DrawerFridgeProps) 
           gridRows={gridPopup.gridRows}
           gridCols={gridPopup.gridCols}
           ingredients={gridPopup.ingredients}
+          enableMultiSelect={true}
           onSelect={(ing) => {
             onSelectIngredient(ing.raw)
+            setGridPopup(null)
+          }}
+          onSelectMultiple={(selectedIngs) => {
+            if (onSelectMultiple) {
+              onSelectMultiple(selectedIngs)
+            }
             setGridPopup(null)
           }}
           onClose={() => setGridPopup(null)}
