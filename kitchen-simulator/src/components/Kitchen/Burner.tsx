@@ -111,6 +111,7 @@ export default function Burner({ burnerNumber }: BurnerProps) {
             currentOrderId: null,
             currentStep: 0,
             stepStartTime: null,
+            addedIngredients: [],
           })
           
           // 해당 주문을 WAITING으로 재배정 가능하게
@@ -135,6 +136,7 @@ export default function Burner({ burnerNumber }: BurnerProps) {
           currentOrderId: null,
           currentStep: 0,
           stepStartTime: null,
+          addedIngredients: [],
         })
         if (orderId) {
           useGameStore.setState((s) => ({
@@ -164,34 +166,43 @@ export default function Burner({ burnerNumber }: BurnerProps) {
 
   return (
     <div className="flex flex-col items-center gap-2 relative pt-20">
-      {/* 웍 (애니메이션) - 크게, 상태별 색상 */}
+      {/* 웍 (애니메이션) - 밝은 스테인리스 웍 */}
       <motion.div
         animate={wokAnimation[wok.position]}
         transition={{ duration: 0.8, ease: 'easeInOut' }}
         className="absolute top-0 z-10 flex flex-col items-center"
       >
-        <div className={`w-[150px] h-[150px] rounded-full border-4 flex items-center justify-center shadow-lg transition ${
+        <div className={`w-[150px] h-[150px] rounded-full border-4 flex items-center justify-center shadow-xl transition relative ${
           wok.state === 'BURNED' 
-            ? 'border-red-700 bg-black animate-pulse shadow-[0_0_40px_rgba(0,0,0,0.9)]'
+            ? 'border-red-900 bg-gradient-to-br from-black via-gray-900 to-black animate-pulse shadow-[0_0_40px_rgba(0,0,0,0.9)]'
             : wok.state === 'OVERHEATING'
-              ? 'border-orange-500 bg-orange-600 animate-pulse shadow-[0_0_30px_rgba(234,88,12,0.8)]'
-              : `border-[#424242] ${stateColors[wok.state]}`
-        }`}>
+              ? 'border-orange-600 bg-gradient-to-br from-orange-400 via-red-500 to-orange-600 animate-pulse shadow-[0_0_30px_rgba(234,88,12,0.8)]'
+              : `border-gray-400 ${stateColors[wok.state]}`
+        }`}
+        style={
+          wok.state !== 'BURNED' && wok.state !== 'OVERHEATING' ? {
+            backgroundImage: `
+              radial-gradient(circle at 30% 30%, rgba(255,255,255,0.3) 0%, transparent 60%),
+              radial-gradient(circle at center, rgba(0,0,0,0.2) 0%, transparent 70%)
+            `,
+            boxShadow: 'inset 0 -10px 20px rgba(0,0,0,0.3), inset 0 5px 15px rgba(255,255,255,0.3), 0 10px 30px rgba(0,0,0,0.2)'
+          } : {}
+        }>
           {wok.currentMenu && (
-            <span className="text-white text-xs font-bold text-center px-2 drop-shadow">
+            <span className="text-white text-xs font-bold text-center px-2 drop-shadow-lg z-10">
               {wok.currentMenu}
             </span>
           )}
           {wok.state === 'BURNED' && (
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-6xl">💀</span>
+              <span className="text-6xl filter drop-shadow-2xl">💀</span>
             </div>
           )}
         </div>
-        <div className={`text-xs mt-1 font-bold ${
-          wok.state === 'BURNED' ? 'text-red-600 animate-bounce' : 
-          wok.state === 'OVERHEATING' ? 'text-orange-600 animate-pulse' : 
-          'text-[#757575]'
+        <div className={`text-xs mt-1 font-bold px-2 py-1 rounded ${
+          wok.state === 'BURNED' ? 'text-white bg-red-600/90 animate-bounce' : 
+          wok.state === 'OVERHEATING' ? 'text-white bg-orange-500/90 animate-pulse' : 
+          'text-gray-700 bg-gray-200/80'
         }`}>
           {wok.state === 'WET' ? '💧 젖음' : 
            wok.state === 'DIRTY' ? '🟤 더러움' : 
@@ -201,34 +212,61 @@ export default function Burner({ burnerNumber }: BurnerProps) {
         </div>
       </motion.div>
 
-      {/* 화구 - 작게, 불만 표시 */}
+      {/* 화구 - 밝은 스테인리스 화구 */}
       <div
-        className={`w-[100px] h-[100px] rounded-full border-4 border-[#424242] flex items-center justify-center transition shadow-lg ${
-          wok.isOn ? 'bg-red-500 shadow-[0_0_30px_rgba(239,68,68,0.8)]' : 'bg-gray-800'
+        className={`w-[100px] h-[100px] rounded-full border-4 border-gray-400 flex items-center justify-center transition shadow-xl relative ${
+          wok.isOn ? 'bg-gradient-radial from-red-400 via-orange-500 to-red-600' : 'bg-gradient-to-br from-gray-300 via-gray-200 to-gray-300'
         }`}
+        style={wok.isOn ? {
+          backgroundImage: `
+            radial-gradient(circle at center, rgba(255,200,0,0.8) 0%, rgba(255,100,0,0.6) 30%, rgba(255,0,0,0.4) 60%, transparent 100%)
+          `,
+          boxShadow: '0 0 40px rgba(255,100,0,0.6), inset 0 0 20px rgba(0,0,0,0.3)'
+        } : {
+          backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(200,200,200,0.5) 50%, rgba(255,255,255,0.8) 100%)',
+          boxShadow: 'inset 0 4px 12px rgba(0,0,0,0.15), 0 4px 8px rgba(0,0,0,0.2)'
+        }}
       >
+        {/* 화구 그릴 (항상 표시) */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-20 h-20 rounded-full border-4 border-gray-400 opacity-40"
+               style={{
+                 background: `
+                   repeating-conic-gradient(
+                     from 0deg,
+                     transparent 0deg 30deg,
+                     rgba(100,100,100,0.3) 30deg 60deg
+                   )
+                 `
+               }}
+          />
+        </div>
         {wok.isOn && (
-          <span className="text-yellow-300 text-2xl">🔥</span>
+          <span className="text-yellow-300 text-3xl animate-pulse filter drop-shadow-[0_0_10px_rgba(255,200,0,0.8)] z-10">
+            🔥
+          </span>
         )}
       </div>
-      <span className="text-sm text-[#333] font-semibold">화구{burnerNumber}</span>
+      <span className="text-xs text-gray-700 font-bold px-3 py-1 bg-gray-200/80 rounded-full border border-gray-300">
+        화구{burnerNumber}
+      </span>
 
       {/* 상태별 안내 및 액션 */}
       {wok.state === 'DIRTY' || wok.state === 'BURNED' ? (
         <div className="text-center">
-          <p className="text-xs text-red-600 font-bold mb-2">
+          <p className="text-xs text-white font-bold mb-2 px-2 py-1 bg-red-500 rounded shadow-md">
             {wok.state === 'BURNED' ? '🔥 타버림!' : '🟤 더러움'}
           </p>
           <button
             type="button"
             onClick={() => washWok(burnerNumber)}
             disabled={wok.isOn}
-            className={`px-3 py-1.5 rounded-lg text-white text-xs font-medium ${
+            className={`px-4 py-2 rounded-lg text-white text-xs font-bold shadow-lg transition-all ${
               wok.isOn 
-                ? 'bg-gray-400 cursor-not-allowed' 
+                ? 'bg-gray-400 cursor-not-allowed opacity-50' 
                 : wok.state === 'BURNED'
-                  ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-teal-600 hover:bg-teal-700'
+                  ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700'
+                  : 'bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700'
             }`}
           >
             {wok.isOn ? '⚠️ 불을 먼저 끄세요' : '🚰 웍 씻기'}
@@ -238,7 +276,7 @@ export default function Burner({ burnerNumber }: BurnerProps) {
         <button
           type="button"
           onClick={() => toggleBurner(burnerNumber)}
-          className="px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium"
+          className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600 text-white text-xs font-bold shadow-lg transition-all"
         >
           🔥 불 켜서 말리기
         </button>
@@ -248,35 +286,77 @@ export default function Burner({ burnerNumber }: BurnerProps) {
           <button
             type="button"
             onClick={() => toggleBurner(burnerNumber)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+            className={`px-5 py-2 rounded-lg text-xs font-bold shadow-lg transition-all ${
               wok.isOn 
-                ? 'bg-gray-600 hover:bg-gray-700 text-white' 
-                : 'bg-red-500 hover:bg-red-600 text-white'
+                ? 'bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white' 
+                : 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white'
             }`}
           >
             {wok.isOn ? '🔥 불 끄기' : '🔥 불 켜기'}
           </button>
           
           {wok.currentMenu && (
-        <div className="flex flex-wrap gap-1 justify-center">
-          {COOKING_ACTIONS.map((a) => (
+        <div className="flex flex-col gap-1 items-center">
+          {/* 진행 상황 표시 */}
+          <div className="text-[10px] text-gray-700 font-bold px-2 py-1 bg-white/80 rounded border border-gray-300">
+            {(() => {
+              const recipe = useGameStore.getState().getRecipeByMenuName(wok.currentMenu)
+              const totalSteps = recipe?.steps?.length ?? 0
+              const isComplete = wok.currentStep >= totalSteps
+              
+              // 현재 스텝의 필요 재료 개수
+              const currentStepIngredients = useGameStore.getState().getCurrentStepIngredients(wok.currentMenu, wok.currentStep)
+              const addedCount = wok.addedIngredients.length
+              const requiredCount = currentStepIngredients.length
+              
+              if (isComplete) {
+                return '✅ 조리 완료! 서빙하세요'
+              } else if (requiredCount > 0) {
+                return `📋 스텝 ${wok.currentStep + 1}/${totalSteps} - 재료 (${addedCount}/${requiredCount})`
+              } else {
+                return `📋 스텝 ${wok.currentStep + 1}/${totalSteps}`
+              }
+            })()}
+          </div>
+          
+          <div className="flex flex-wrap gap-1 justify-center bg-white/70 p-2 rounded-lg border border-gray-300">
+            {COOKING_ACTIONS.map((a) => (
+              <button
+                key={a.type}
+                type="button"
+                onClick={() => handleAction(a.type)}
+                className="p-2 rounded bg-white border-2 border-gray-300 hover:border-orange-400 hover:bg-orange-50 text-lg shadow-md hover:shadow-lg transition-all"
+                title={a.label}
+              >
+                {a.icon}
+              </button>
+            ))}
             <button
-              key={a.type}
               type="button"
-              onClick={() => handleAction(a.type)}
-              className="p-1.5 rounded bg-white border border-[#E0E0E0] hover:bg-primary/20 text-sm"
-              title={a.label}
+              onClick={() => {
+                const recipe = useGameStore.getState().getRecipeByMenuName(wok.currentMenu!)
+                const totalSteps = recipe?.steps?.length ?? 0
+                const isComplete = wok.currentStep >= totalSteps
+                if (!isComplete) {
+                  alert(`아직 조리가 완료되지 않았습니다.\n현재: ${wok.currentStep}/${totalSteps}\n남은 단계를 먼저 완료하세요.`)
+                  return
+                }
+                serve(burnerNumber)
+              }}
+              className={`px-3 py-2 rounded text-sm font-bold transition-all shadow-lg ${
+                (() => {
+                  const recipe = useGameStore.getState().getRecipeByMenuName(wok.currentMenu!)
+                  const totalSteps = recipe?.steps?.length ?? 0
+                  const isComplete = wok.currentStep >= totalSteps
+                  return isComplete
+                    ? 'bg-gradient-to-r from-green-400 to-emerald-500 border-2 border-green-500 text-white animate-pulse hover:from-green-500 hover:to-emerald-600'
+                    : 'bg-gray-300 border border-gray-400 text-gray-500 opacity-50 cursor-not-allowed'
+                })()
+              }`}
             >
-              {a.icon}
+              🍽️ 서빙
             </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => serve(burnerNumber)}
-            className="p-1.5 rounded bg-green-100 border border-green-300 text-sm font-medium"
-          >
-            서빙
-          </button>
+          </div>
         </div>
           )}
         </>

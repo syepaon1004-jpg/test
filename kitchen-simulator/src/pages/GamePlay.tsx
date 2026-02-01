@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../stores/gameStore'
 import { selectRandomMenu } from '../stores/gameStore'
@@ -12,6 +12,8 @@ import SinkArea from '../components/Kitchen/SinkArea'
 import Burner from '../components/Kitchen/Burner'
 import WokDryingManager from '../components/Kitchen/WokDryingManager'
 import DrawerFridge from '../components/Kitchen/DrawerFridge'
+import FridgeBox from '../components/Kitchen/FridgeBox'
+import FridgeZoomView from '../components/Kitchen/FridgeZoomView'
 import SeasoningCounter from '../components/Kitchen/SeasoningCounter'
 import AmountInputPopup from '../components/Kitchen/AmountInputPopup'
 
@@ -45,6 +47,8 @@ export default function GamePlay() {
     recordBurnerUsage,
     endGame,
     getCurrentStepIngredients,
+    fridgeViewState,
+    openFridgeZoom,
   } = useGameStore()
 
   const [selectedBurner, setSelectedBurner] = useState<number | null>(null)
@@ -221,66 +225,140 @@ export default function GamePlay() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#F7F7F7] min-w-[1280px] overflow-y-auto">
+    <div className="bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200 min-w-[1280px] min-h-screen">
       <WokDryingManager />
       <GameHeader />
 
-      {/* 메뉴 대기열 - 플로우에 포함 */}
-      <div className="shrink-0 px-4 py-3 bg-white border-b border-[#E0E0E0]">
+      {/* 주문서 (상단 중앙 고정) - 주방 알림판 스타일 */}
+      <div className="px-4 py-3 bg-gradient-to-r from-yellow-50 via-white to-yellow-50 border-b-4 border-yellow-400 shadow-md">
         <MenuQueue onAssignToWok={handleAssignToWok} selectedBurner={selectedBurner} />
       </div>
 
-      {/* 주방 레이아웃: 왼쪽 싱크대 | 중앙(화구+서랍) | 오른쪽 조미료대 */}
-      <div className="flex min-h-[600px]">
-        {/* 왼쪽: 싱크대 (청록색) */}
-        <div className="w-48 shrink-0">
-          <SinkArea />
+      {/* 주방 레이아웃: 왼쪽(싱크대+4호박스) | 중앙(화구+서랍) | 오른쪽(조미료대) */}
+      <div className="flex pb-12 pt-8 px-6">
+        {/* 왼쪽: 싱크대(위) + 4호박스(아래) */}
+        <div className="w-[230px] flex flex-col gap-4 my-8">
+          {/* 싱크대 */}
+          <div className="w-full">
+            <SinkArea />
+          </div>
+          
+          {/* 4호박스 냉장고 - 실버 스테인리스 스타일 */}
+          <div className="w-full p-4 bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200 border-2 border-gray-300 rounded-xl shadow-xl flex-1 flex flex-col"
+               style={{
+                 backgroundImage: `
+                   linear-gradient(135deg, 
+                     rgba(255,255,255,0.8) 0%, 
+                     rgba(200,200,200,0.3) 25%,
+                     rgba(255,255,255,0.5) 50%, 
+                     rgba(200,200,200,0.3) 75%,
+                     rgba(255,255,255,0.8) 100%)
+                 `,
+                 boxShadow: 'inset 0 2px 6px rgba(255,255,255,0.9), 0 8px 20px rgba(0,0,0,0.15)'
+               }}>
+            <div className="text-xs font-bold text-gray-700 mb-3 px-2 py-1 bg-white/60 rounded text-center tracking-wider border border-gray-300">
+              🧊 4호박스 냉장고
+            </div>
+            <button
+              type="button"
+              onClick={() => openFridgeZoom('FRIDGE_ALL')}
+              className="w-full group flex-1 flex items-center"
+            >
+              <div className="grid grid-cols-2 gap-2 w-full">
+                {['FRIDGE_LT', 'FRIDGE_RT', 'FRIDGE_LB', 'FRIDGE_RB'].map((code, index) => {
+                  const labels = ['좌상', '우상', '좌하', '우하']
+                  return (
+                    <div
+                      key={code}
+                      className="h-28 rounded-lg bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 shadow-md group-hover:shadow-xl border-2 border-gray-300 text-gray-700 font-bold text-xs transition-all flex items-center justify-center relative overflow-hidden"
+                      style={{
+                        backgroundImage: `
+                          linear-gradient(135deg, 
+                            rgba(255,255,255,0.9) 0%, 
+                            rgba(220,220,220,0.5) 50%, 
+                            rgba(255,255,255,0.9) 100%)
+                        `,
+                        boxShadow: 'inset 0 1px 3px rgba(255,255,255,1), 0 4px 8px rgba(0,0,0,0.1)'
+                      }}
+                    >
+                      {/* 문 손잡이 */}
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 w-1 h-16 bg-gray-400 rounded-full shadow-inner"></div>
+                      <div className="relative z-10 flex flex-col items-center gap-1">
+                        <div className="text-xl">❄️</div>
+                        <div>{labels[index]}</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </button>
+          </div>
         </div>
 
-        {/* 중앙: 화구 3개 가로 + 서랍냉장고 2x2 (화구 바로 아래) */}
-        <div className="flex-1 flex flex-col items-center justify-start pt-8 gap-6 p-6 min-w-0">
-          <div className="flex gap-8 items-end">
+        {/* 중앙: 화구 + 서랍냉장고 */}
+        <div className="flex-1 flex flex-col gap-8 px-6 items-center my-8">
+          {/* 화구 3개 가로 배치 - 밝은 스테인리스 화구대 */}
+          <div className="flex gap-16 items-end bg-gradient-to-b from-gray-300 via-gray-200 to-gray-300 px-16 py-10 rounded-2xl shadow-xl border-2 border-gray-400"
+               style={{
+                 backgroundImage: `
+                   linear-gradient(135deg, 
+                     rgba(255,255,255,0.6) 0%, 
+                     rgba(200,200,200,0.4) 50%, 
+                     rgba(255,255,255,0.6) 100%)
+                 `,
+                 boxShadow: 'inset 0 2px 8px rgba(255,255,255,0.9), 0 10px 30px rgba(0,0,0,0.2)'
+               }}>
             {[1, 2, 3].map((n) => (
               <Burner key={n} burnerNumber={n} />
             ))}
           </div>
-          {targetWokForIngredient && (
-            <p className="text-sm text-[#757575]">재료/조미료 투입 대상: 화구{targetWokForIngredient}</p>
-          )}
-          <DrawerFridge onSelectIngredient={handleSelectIngredient} />
+
+          {/* 서랍냉장고 - 실버 스테인리스 서랍 스타일 */}
+          <div className="w-full max-w-[700px] flex-1 flex items-end">
+            <DrawerFridge onSelectIngredient={handleSelectIngredient} />
+          </div>
         </div>
 
-        {/* 오른쪽: 조미료대 (2행 3열, 독립) */}
-        <div className="w-64 shrink-0">
+        {/* 오른쪽: 조미료대 - 밝은 선반 스타일 */}
+        <div className="w-48 flex flex-col my-8">
           <SeasoningCounter onSelectSeasoning={handleSelectSeasoning} />
         </div>
       </div>
 
-      {/* 레시피 가이드 (정답지) - footer와 독립 */}
-      <RecipeGuide />
+      {/* 레시피 가이드 */}
+      <div className="py-6 px-6 bg-gradient-to-br from-blue-50 to-indigo-50 border-t-4 border-blue-300">
+        <RecipeGuide />
+      </div>
 
-      {/* 액션 로그 & 화구 사용율 (작게, 가장 아래) */}
-      <div className="shrink-0 grid grid-cols-2 gap-3 px-4 py-2 bg-gray-100 border-t border-gray-300">
-        <div>
-          <h4 className="font-semibold text-[#333] mb-1 text-xs">액션 로그</h4>
+      {/* 액션 로그 & 화구 사용율 */}
+      <div className="grid grid-cols-2 gap-3 px-4 py-6 bg-gradient-to-br from-gray-100 to-gray-200 border-t-4 border-gray-300 mb-12">
+        <div className="bg-white/80 p-4 rounded-lg border-2 border-gray-300 shadow-md">
+          <h4 className="font-bold text-gray-700 mb-2 text-xs tracking-wider flex items-center gap-2">
+            <span>📋</span> 액션 로그
+          </h4>
           <ActionLogPanel />
         </div>
-        <div>
-          <h4 className="font-semibold text-[#333] mb-1 text-xs">화구 사용율</h4>
+        <div className="bg-white/80 p-4 rounded-lg border-2 border-gray-300 shadow-md">
+          <h4 className="font-bold text-gray-700 mb-2 text-xs tracking-wider flex items-center gap-2">
+            <span>🔥</span> 화구 사용율
+          </h4>
           <div className="flex items-center gap-2">
-            <div className="flex-1 h-4 bg-[#E0E0E0] rounded-full overflow-hidden">
+            <div className="flex-1 h-6 bg-gray-200 rounded-full overflow-hidden border-2 border-gray-300 shadow-inner">
               <div
-                className="h-full bg-primary rounded-full transition-all"
-                style={{ width: `${Math.min(100, burnerUsagePercent)}%` }}
+                className="h-full bg-gradient-to-r from-orange-400 via-red-500 to-red-600 rounded-full transition-all shadow-md"
+                style={{ 
+                  width: `${Math.min(100, burnerUsagePercent)}%`,
+                  boxShadow: '0 0 8px rgba(239, 68, 68, 0.4)'
+                }}
               />
             </div>
-            <span className="font-mono font-semibold text-xs">{burnerUsagePercent}%</span>
+            <span className="font-mono font-bold text-sm text-gray-700 min-w-[3rem] text-right">{burnerUsagePercent}%</span>
           </div>
         </div>
       </div>
 
       {toast && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl bg-[#333] text-white shadow-lg z-50">
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 px-8 py-4 rounded-xl bg-white text-gray-800 shadow-2xl z-50 border-2 border-gray-300 font-bold">
           {toast}
         </div>
       )}
@@ -297,6 +375,11 @@ export default function GamePlay() {
           onConfirm={handleConfirmAmount}
           onCancel={() => setAmountPopup(null)}
         />
+      )}
+
+      {/* 4호박스 줌뷰 */}
+      {fridgeViewState !== 'CLOSED' && (
+        <FridgeZoomView onSelectIngredient={handleSelectIngredient} />
       )}
     </div>
   )

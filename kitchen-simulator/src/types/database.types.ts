@@ -141,6 +141,7 @@ export interface Wok {
   currentStep: number
   stepStartTime: number | null
   burnerOnSince: number | null
+  addedIngredients: string[] // 현재 스텝에서 투입한 재료 SKU 목록
 }
 
 export type MenuOrderStatus = 'WAITING' | 'COOKING' | 'COMPLETED'

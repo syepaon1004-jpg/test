@@ -16,12 +16,12 @@ import type {
 } from '../types/database.types'
 
 const INITIAL_WOKS: Wok[] = [
-  { burnerNumber: 1, isOn: false, state: 'CLEAN', position: 'AT_BURNER', currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, burnerOnSince: null },
-  { burnerNumber: 2, isOn: false, state: 'CLEAN', position: 'AT_BURNER', currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, burnerOnSince: null },
-  { burnerNumber: 3, isOn: false, state: 'CLEAN', position: 'AT_BURNER', currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, burnerOnSince: null },
+  { burnerNumber: 1, isOn: false, state: 'CLEAN', position: 'AT_BURNER', currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, burnerOnSince: null, addedIngredients: [] },
+  { burnerNumber: 2, isOn: false, state: 'CLEAN', position: 'AT_BURNER', currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, burnerOnSince: null, addedIngredients: [] },
+  { burnerNumber: 3, isOn: false, state: 'CLEAN', position: 'AT_BURNER', currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, burnerOnSince: null, addedIngredients: [] },
 ]
 
-const TARGET_MENUS = 50
+const TARGET_MENUS = 3
 
 interface GameStore {
   currentStore: Store | null
@@ -32,6 +32,14 @@ interface GameStore {
   ingredients: IngredientInventory[]
   recipes: Recipe[]
   seasonings: Seasoning[]
+  
+  // 냉장고/서랍 식자재 캐시 (location_code별)
+  storageCache: Record<string, {
+    title: string
+    gridRows: number
+    gridCols: number
+    ingredients: IngredientInventory[]
+  }>
 
   isPlaying: boolean
   elapsedSeconds: number
@@ -42,12 +50,18 @@ interface GameStore {
   actionLogs: ActionLog[]
   burnerUsageHistory: BurnerUsageLog[]
   usedMenuNames: Set<string>
+  
+  // 4호박스 뷰 상태
+  fridgeViewState: 'CLOSED' | 'ZOOMED' | 'DOOR_OPEN' | 'FLOOR_SELECT' | 'GRID_VIEW'
+  selectedFridgePosition: string | null // 'FRIDGE_LT', 'FRIDGE_RT', etc.
+  selectedFloor: number | null // 1 or 2
 
   setStore: (store: Store | null) => void
   setUser: (user: User | null) => void
   setCurrentUser: (user: User | null) => void
   setLevel: (level: GameLevel) => void
   loadStoreData: (storeId: string) => Promise<void>
+  preloadStorageData: (storeId: string) => Promise<void>
   resetGameState: () => void
   tickTimer: () => void
   addMenuToQueue: (menuName: string) => void
@@ -64,6 +78,14 @@ interface GameStore {
   getCurrentStepIngredients: (menuName: string, stepIndex: number) => { required_sku: string; required_amount: number; required_unit: string }[]
   validateAndAdvanceIngredient: (burnerNumber: number, sku: string, amount: number, isSeasoning: boolean) => boolean
   validateAndAdvanceAction: (burnerNumber: number, actionType: string) => { ok: boolean; burned?: boolean }
+  
+  // 4호박스 뷰 액션
+  openFridgeZoom: (position: string) => void
+  closeFridgeView: () => void
+  openFridgeDoor: () => void
+  selectFloor: (floor: number) => void
+  backToFridgeZoom: () => void
+  
   reset: () => void
 }
 
@@ -76,6 +98,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   ingredients: [],
   recipes: [],
   seasonings: [],
+  storageCache: {},
 
   isPlaying: false,
   elapsedSeconds: 0,
@@ -86,6 +109,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   actionLogs: [],
   burnerUsageHistory: [],
   usedMenuNames: new Set(),
+  
+  fridgeViewState: 'CLOSED',
+  selectedFridgePosition: null,
+  selectedFloor: null,
 
   setStore: (store) => set({ currentStore: store }),
   setUser: (user) => set({ currentUser: user }),
@@ -113,6 +140,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ingredients: [],
       recipes: [],
       seasonings: [],
+      storageCache: {},
       isPlaying: false,
       elapsedSeconds: 0,
       completedMenus: 0,
@@ -122,6 +150,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       actionLogs: [],
       burnerUsageHistory: [],
       usedMenuNames: new Set(),
+      fridgeViewState: 'CLOSED',
+      selectedFridgePosition: null,
+      selectedFloor: null,
     }),
 
   tickTimer: () => set((s) => ({ elapsedSeconds: s.elapsedSeconds + 1 })),
@@ -165,6 +196,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               stepStartTime: Date.now(),
               isOn: true,
               burnerOnSince: Date.now(),
+              addedIngredients: [], // 초기화
             }
           : w
       ),
@@ -263,41 +295,47 @@ export const useGameStore = create<GameStore>((set, get) => ({
   serve: (burnerNumber) => {
     const { woks, completedMenus, targetMenus, getRecipeByMenuName } = get()
     const wok = woks.find((w) => w.burnerNumber === burnerNumber)
-    if (!wok || !wok.currentMenu) return false
+    if (!wok || !wok.currentMenu || !wok.currentOrderId) return false
 
     const recipe = getRecipeByMenuName(wok.currentMenu)
     const sortedSteps = recipe?.steps ? [...recipe.steps].sort((a, b) => a.step_number - b.step_number) : []
     if (!recipe || !sortedSteps.length) return false
     const isComplete = wok.currentStep >= sortedSteps.length
-    if (!isComplete) return false
+    if (!isComplete) {
+      console.warn(`화구${burnerNumber}: 아직 조리가 완료되지 않았습니다. (${wok.currentStep}/${sortedSteps.length})`)
+      return false
+    }
+
+    // 서빙 전에 필요한 정보 저장
+    const completedOrderId = wok.currentOrderId
+    const completedMenuName = wok.currentMenu
 
     set((s) => ({
       menuQueue: s.menuQueue.map((o) =>
-        o.menuName === wok.currentMenu && o.assignedBurner === burnerNumber
+        o.id === completedOrderId
           ? { ...o, status: 'COMPLETED' as const, servedAt: new Date() }
           : o
       ),
       woks: s.woks.map((w) =>
         w.burnerNumber === burnerNumber
-          ? { ...w, state: 'DIRTY' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null }
+          ? { ...w, state: 'DIRTY' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [] }
           : w
       ),
       completedMenus: s.completedMenus + 1,
     }))
+    
     get().logAction({
       actionType: 'SERVE',
-      menuName: wok.currentMenu,
+      menuName: completedMenuName,
       burnerNumber,
       isCorrect: true,
-      message: `${wok.currentMenu} 서빙 완료`,
+      message: `${completedMenuName} 서빙 완료`,
     })
 
-    // 3초 후 완료된 주문카드 제거
+    // 3초 후 완료된 주문카드 제거 (orderId로 정확하게 매칭)
     setTimeout(() => {
       set((s) => ({
-        menuQueue: s.menuQueue.filter(
-          (o) => !(o.status === 'COMPLETED' && o.menuName === wok.currentMenu && o.assignedBurner === burnerNumber)
-        ),
+        menuQueue: s.menuQueue.filter((o) => o.id !== completedOrderId),
       }))
     }, 3000)
 
@@ -369,6 +407,88 @@ export const useGameStore = create<GameStore>((set, get) => ({
       recipes: recipesRes.data ?? [],
       seasonings: seasoningsRes.data ?? [],
     })
+  },
+
+  preloadStorageData: async (storeId) => {
+    console.log('🔄 식자재 데이터 프리로딩 시작...')
+    
+    // 모든 냉장고/서랍 위치 코드
+    const locationCodes = [
+      'FRIDGE_LT_F1', 'FRIDGE_LT_F2',
+      'FRIDGE_RT_F1', 'FRIDGE_RT_F2',
+      'FRIDGE_LB_F1', 'FRIDGE_LB_F2',
+      'FRIDGE_RB_F1', 'FRIDGE_RB_F2',
+      'DRAWER_LT', 'DRAWER_RT', 'DRAWER_LB', 'DRAWER_RB',
+    ]
+
+    // 모든 위치의 데이터를 병렬로 로드
+    const results = await Promise.all(
+      locationCodes.map(async (locationCode) => {
+        try {
+          // .single() 대신 .maybeSingle() 사용 (데이터 없어도 에러 안 남)
+          const { data: location, error: locationError } = await supabase
+            .from('storage_locations')
+            .select('*')
+            .eq('location_code', locationCode)
+            .eq('store_id', storeId)
+            .maybeSingle()
+
+          if (locationError) {
+            console.warn(`⚠️ ${locationCode} 조회 에러:`, locationError)
+            return { locationCode, data: null }
+          }
+
+          if (!location) {
+            console.log(`ℹ️ ${locationCode} - DB에 없음 (건너뜀)`)
+            return { locationCode, data: null }
+          }
+
+          const { data: ingredients, error: ingredientsError } = await supabase
+            .from('ingredients_inventory')
+            .select('*, ingredient_master:ingredients_master(*)')
+            .eq('storage_location_id', location.id)
+            .not('grid_positions', 'is', null)
+
+          if (ingredientsError) {
+            console.warn(`⚠️ ${locationCode} 식자재 조회 에러:`, ingredientsError)
+            return { locationCode, data: null }
+          }
+
+          if (!ingredients || ingredients.length === 0) {
+            console.log(`ℹ️ ${locationCode} - 식자재 없음`)
+            return { locationCode, data: null }
+          }
+
+          console.log(`✅ ${locationCode} - ${ingredients.length}개 식자재 로드`)
+          
+          return {
+            locationCode,
+            data: {
+              title: location.location_name ?? locationCode,
+              gridRows: (location as any).grid_rows ?? 3,
+              gridCols: (location as any).grid_cols ?? 2,
+              ingredients: ingredients as IngredientInventory[],
+            },
+          }
+        } catch (error) {
+          console.error(`❌ ${locationCode} 처리 중 예외:`, error)
+          return { locationCode, data: null }
+        }
+      })
+    )
+
+    // 캐시에 저장
+    const cache: Record<string, any> = {}
+    let successCount = 0
+    results.forEach((result) => {
+      if (result.data) {
+        cache[result.locationCode] = result.data
+        successCount++
+      }
+    })
+
+    console.log(`🎉 프리로딩 완료: ${successCount}/${locationCodes.length}개 위치 캐시됨`)
+    set({ storageCache: cache })
   },
 
   startGame: async () => {
@@ -491,6 +611,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const recipe = getRecipeByMenuName(wok.currentMenu)
     if (!recipe?.steps?.length) return false
     const reqs = getCurrentStepIngredients(wok.currentMenu, wok.currentStep)
+    
+    // 이미 추가한 재료는 다시 추가 불가
+    if (wok.addedIngredients.includes(sku)) {
+      logAction({
+        actionType: 'ADD_TO_WOK',
+        menuName: wok.currentMenu,
+        burnerNumber,
+        ingredientSKU: sku,
+        amountInput: amount,
+        isCorrect: false,
+        message: `화구${burnerNumber}: 이미 투입한 재료입니다`,
+      })
+      return false
+    }
+    
     const match = reqs.find((r) => {
       if (isSeasoning) {
         return r.required_sku.startsWith('SEASONING:') && r.required_sku.includes(sku.split(':')[1]) && r.required_amount === amount
@@ -513,20 +648,55 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     if (!isCorrect) return false
 
-    const nextStep = wok.currentStep + 1
-    // 재료 투입 시에도 타이머 리셋 (웍에 재료 넣으면 다시 카운트)
-    set((s) => ({
-      woks: s.woks.map((w) =>
-        w.burnerNumber === burnerNumber
-          ? { 
-              ...w, 
-              currentStep: nextStep, 
-              stepStartTime: Date.now(),
-              burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince, // 불 켜져있으면 타이머 리셋
-            }
-          : w
-      ),
-    }))
+    // 투입한 재료 목록에 추가
+    const newAddedIngredients = [...wok.addedIngredients, sku]
+    
+    // 현재 스텝의 모든 재료가 투입되었는지 확인
+    const allIngredientsAdded = reqs.every((req) => 
+      newAddedIngredients.some((added) => {
+        // SEASONING인 경우 부분 매칭
+        if (req.required_sku.startsWith('SEASONING:')) {
+          return added.includes(req.required_sku.split(':')[1])
+        }
+        return added === req.required_sku
+      })
+    )
+
+    if (allIngredientsAdded) {
+      // 모든 재료 투입 완료 → 다음 스텝으로
+      const nextStep = wok.currentStep + 1
+      console.log(`화구${burnerNumber}: 스텝 ${wok.currentStep} 모든 재료 투입 완료 (${reqs.length}개) → 스텝 ${nextStep}로 진행`)
+      
+      set((s) => ({
+        woks: s.woks.map((w) =>
+          w.burnerNumber === burnerNumber
+            ? { 
+                ...w, 
+                currentStep: nextStep, 
+                stepStartTime: Date.now(),
+                burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
+                addedIngredients: [], // 다음 스텝 시작 시 초기화
+              }
+            : w
+        ),
+      }))
+    } else {
+      // 아직 더 넣을 재료가 있음
+      console.log(`화구${burnerNumber}: 재료 투입 (${newAddedIngredients.length}/${reqs.length}) - 계속 진행`)
+      
+      set((s) => ({
+        woks: s.woks.map((w) =>
+          w.burnerNumber === burnerNumber
+            ? { 
+                ...w, 
+                addedIngredients: newAddedIngredients,
+                burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
+              }
+            : w
+        ),
+      }))
+    }
+    
     return true
   },
 
@@ -578,7 +748,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set((s) => ({
         woks: s.woks.map((w) =>
           w.burnerNumber === burnerNumber 
-            ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null } 
+            ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [] } 
             : w
         ),
         menuQueue: orderId 
@@ -607,6 +777,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }))
     return { ok: true }
   },
+  
+  // 4호박스 뷰 액션 구현
+  openFridgeZoom: (position) => set({ 
+    fridgeViewState: 'ZOOMED', 
+    selectedFridgePosition: position 
+  }),
+  
+  closeFridgeView: () => set({ 
+    fridgeViewState: 'CLOSED', 
+    selectedFridgePosition: null, 
+    selectedFloor: null 
+  }),
+  
+  openFridgeDoor: () => set({ fridgeViewState: 'DOOR_OPEN' }),
+  
+  selectFloor: (floor) => set({ 
+    fridgeViewState: 'GRID_VIEW', 
+    selectedFloor: floor 
+  }),
+  
+  backToFridgeZoom: () => set({ 
+    fridgeViewState: 'ZOOMED', 
+    selectedFloor: null 
+  }),
 }))
 
 export function selectRandomMenu(
