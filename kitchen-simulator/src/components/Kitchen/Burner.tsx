@@ -65,7 +65,7 @@ export default function Burner({ burnerNumber }: BurnerProps) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-2 relative pt-4 pb-2">
+    <div className="flex flex-col items-center gap-2 relative pt-4 pb-2" style={{ minHeight: '520px' }}>
       {/* 온도 게이지 (최상단, 고정) */}
       <div className="w-full max-w-[180px] mb-1">
         <div className="flex items-center justify-between mb-1">
@@ -114,25 +114,27 @@ export default function Burner({ burnerNumber }: BurnerProps) {
         </div>
         
         {/* 상태 표시 */}
-        {wok.temperature >= WOK_TEMP.BURNED && (
-          <div className="text-center mt-0.5 text-xs font-bold text-red-600 animate-bounce">
-            💀 타버림 위험!
-          </div>
-        )}
-        {wok.temperature >= WOK_TEMP.OVERHEATING && wok.temperature < WOK_TEMP.BURNED && (
-          <div className="text-center mt-0.5 text-xs font-bold text-orange-600 animate-pulse">
-            ⚠️ 과열 중!
-          </div>
-        )}
-        {wok.temperature >= WOK_TEMP.SMOKING_POINT && wok.temperature < WOK_TEMP.OVERHEATING && (
-          <div className="text-center mt-0.5 text-xs font-bold text-orange-500">
-            💨 스모킹
-          </div>
-        )}
+        <div className="h-5 flex items-center justify-center">
+          {wok.temperature >= WOK_TEMP.BURNED && (
+            <div className="text-center text-xs font-bold text-red-600 animate-bounce">
+              💀 타버림 위험!
+            </div>
+          )}
+          {wok.temperature >= WOK_TEMP.OVERHEATING && wok.temperature < WOK_TEMP.BURNED && (
+            <div className="text-center text-xs font-bold text-orange-600 animate-pulse">
+              ⚠️ 과열 중!
+            </div>
+          )}
+          {wok.temperature >= WOK_TEMP.SMOKING_POINT && wok.temperature < WOK_TEMP.OVERHEATING && (
+            <div className="text-center text-xs font-bold text-orange-500">
+              💨 스모킹
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 웍과 화구 영역 (relative container) */}
-      <div className="relative w-full flex flex-col items-center" style={{ minHeight: '180px' }}>
+      {/* 웍과 화구 영역 (relative container) - 고정 높이 */}
+      <div className="relative w-full flex flex-col items-center" style={{ height: '200px' }}>
         {/* 웍 (애니메이션) - 밝은 스테인리스 웍 */}
         <motion.div
           animate={wokAnimation[wok.position]}
@@ -280,7 +282,8 @@ export default function Burner({ burnerNumber }: BurnerProps) {
       </span>
       </div>
 
-      {/* 컨트롤 버튼 영역 (웍/화구 아래에 배치) */}
+      {/* 컨트롤 버튼 영역 (웍/화구 아래에 배치) - 고정 높이 */}
+      <div className="w-full flex flex-col items-center gap-2" style={{ minHeight: '200px' }}>
       {wok.state === 'DIRTY' || wok.state === 'BURNED' ? (
         <div className="text-center">
           <p className="text-xs text-white font-bold mb-2 px-2 py-1 bg-red-500 rounded shadow-md">
@@ -402,6 +405,7 @@ export default function Burner({ burnerNumber }: BurnerProps) {
           )}
         </>
       )}
+      </div>
     </div>
   )
 }
