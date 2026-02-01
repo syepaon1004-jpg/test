@@ -157,10 +157,11 @@ export default function Burner({ burnerNumber }: BurnerProps) {
           } : {}
         }>
           {/* 볶기 중일 때 불 효과 (불질/웍질) - 온도 체크 추가 */}
-          <AnimatePresence>
+          <AnimatePresence mode="wait">
             {wok.isStirFrying && wok.temperature >= WOK_TEMP.MIN_STIR_FRY && (
               <>
                 <motion.div
+                  key={`fire-center-${burnerNumber}`}
                   initial={{ scale: 0, opacity: 0 }}
                   animate={{ 
                     scale: [1, 1.3, 1.1, 1.4, 1.2],
@@ -168,13 +169,14 @@ export default function Burner({ burnerNumber }: BurnerProps) {
                     rotate: [0, 5, -5, 3, -3],
                   }}
                   exit={{ scale: 0, opacity: 0 }}
-                  transition={{ duration: 0.3, repeat: Infinity, repeatDelay: 0.1 }}
+                  transition={{ duration: 0.3 }}
                   className="absolute -top-8 left-1/2 -translate-x-1/2 text-7xl z-20"
                   style={{ filter: 'drop-shadow(0 0 20px rgba(255,100,0,0.8))' }}
                 >
                   🔥
                 </motion.div>
                 <motion.div
+                  key={`fire-left-${burnerNumber}`}
                   initial={{ scale: 0, opacity: 0 }}
                   animate={{ 
                     scale: [1.1, 1.4, 1.2, 1.5, 1.3],
@@ -182,13 +184,14 @@ export default function Burner({ burnerNumber }: BurnerProps) {
                     rotate: [0, -7, 7, -5, 5],
                   }}
                   exit={{ scale: 0, opacity: 0 }}
-                  transition={{ duration: 0.35, delay: 0.1, repeat: Infinity, repeatDelay: 0.15 }}
+                  transition={{ duration: 0.35, delay: 0.1 }}
                   className="absolute -top-12 left-1/4 text-6xl z-20"
                   style={{ filter: 'drop-shadow(0 0 15px rgba(255,150,0,0.7))' }}
                 >
                   🔥
                 </motion.div>
                 <motion.div
+                  key={`fire-right-${burnerNumber}`}
                   initial={{ scale: 0, opacity: 0 }}
                   animate={{ 
                     scale: [1, 1.2, 1.15, 1.3, 1.1],
@@ -196,7 +199,7 @@ export default function Burner({ burnerNumber }: BurnerProps) {
                     rotate: [0, 8, -8, 6, -6],
                   }}
                   exit={{ scale: 0, opacity: 0 }}
-                  transition={{ duration: 0.32, delay: 0.05, repeat: Infinity, repeatDelay: 0.12 }}
+                  transition={{ duration: 0.32, delay: 0.05 }}
                   className="absolute -top-10 right-1/4 text-6xl z-20"
                   style={{ filter: 'drop-shadow(0 0 15px rgba(255,120,0,0.6))' }}
                 >
