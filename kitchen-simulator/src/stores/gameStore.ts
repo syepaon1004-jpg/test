@@ -342,11 +342,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }))
 
     setTimeout(() => {
-      // 2. 싱크대 도착 → 씻기 시작
+      // 2. 싱크대 도착 → 씻기 시작 (온도 초기화)
       set((s) => ({
         woks: s.woks.map((w) =>
           w.burnerNumber === burnerNumber
-            ? { ...w, position: 'AT_SINK' as const, state: 'WET' as const, currentMenu: null, currentStep: 0, stepStartTime: null }
+            ? { 
+                ...w, 
+                position: 'AT_SINK' as const, 
+                state: 'WET' as const, 
+                currentMenu: null, 
+                currentStep: 0, 
+                stepStartTime: null,
+                temperature: WOK_TEMP.AMBIENT, // 온도 초기화
+                isStirFrying: false,
+                stirFryStartTime: null,
+              }
             : w
         ),
       }))
