@@ -14,7 +14,7 @@ import type {
   BurnerUsageLog,
   GameLevel,
 } from '../types/database.types'
-import { WOK_TEMP } from '../types/database.types'
+import { WOK_TEMP, MENU_TIMER, calculateTimeScore } from '../types/database.types'
 
 const INITIAL_WOKS: Wok[] = [
   { 
@@ -31,8 +31,14 @@ const INITIAL_WOKS: Wok[] = [
     temperature: WOK_TEMP.AMBIENT,
     isStirFrying: false,
     stirFryStartTime: null,
-    heatLevel: 2,
+    heatLevel: 3, // 기본 강불
     stirFryCount: 0,
+    hasWater: false,
+    waterTemperature: WOK_TEMP.AMBIENT,
+    waterBoilStartTime: null,
+    isBoiling: false,
+    recipeErrors: 0,
+    totalSteps: 0,
   },
   { 
     burnerNumber: 2, 
@@ -48,8 +54,14 @@ const INITIAL_WOKS: Wok[] = [
     temperature: WOK_TEMP.AMBIENT,
     isStirFrying: false,
     stirFryStartTime: null,
-    heatLevel: 2,
+    heatLevel: 3, // 기본 강불
     stirFryCount: 0,
+    hasWater: false,
+    waterTemperature: WOK_TEMP.AMBIENT,
+    waterBoilStartTime: null,
+    isBoiling: false,
+    recipeErrors: 0,
+    totalSteps: 0,
   },
   { 
     burnerNumber: 3, 
@@ -65,8 +77,14 @@ const INITIAL_WOKS: Wok[] = [
     temperature: WOK_TEMP.AMBIENT,
     isStirFrying: false,
     stirFryStartTime: null,
-    heatLevel: 2,
+    heatLevel: 3, // 기본 강불
     stirFryCount: 0,
+    hasWater: false,
+    waterTemperature: WOK_TEMP.AMBIENT,
+    waterBoilStartTime: null,
+    isBoiling: false,
+    recipeErrors: 0,
+    totalSteps: 0,
   },
 ]
 
@@ -100,6 +118,16 @@ interface GameStore {
   burnerUsageHistory: BurnerUsageLog[]
   usedMenuNames: Set<string>
   
+  // 서빙 오류 알림 (신입이 아닐 때)
+  lastServeError: {
+    burnerNumber: number
+    menuName: string
+    errors: number
+    totalSteps: number
+    accuracy: number
+    timestamp: number
+  } | null
+  
   // 4호박스 뷰 상태
   fridgeViewState: 'CLOSED' | 'ZOOMED' | 'DOOR_OPEN' | 'FLOOR_SELECT' | 'GRID_VIEW'
   selectedFridgePosition: string | null // 'FRIDGE_LT', 'FRIDGE_RT', etc.
@@ -113,6 +141,7 @@ interface GameStore {
   preloadStorageData: (storeId: string) => Promise<void>
   resetGameState: () => void
   tickTimer: () => void
+  checkMenuTimers: () => void // 메뉴 타이머 체크 (15분 초과 시 자동 취소)
   addMenuToQueue: (menuName: string) => void
   assignMenuToWok: (menuId: string, burnerNumber: number) => void
   updateWok: (burnerNumber: number, updates: Partial<Wok>) => void
@@ -121,6 +150,7 @@ interface GameStore {
   startStirFry: (burnerNumber: number) => boolean // 볶기 시작
   stopStirFry: (burnerNumber: number) => void // 볶기 중지
   washWok: (burnerNumber: number) => void
+  emptyWok: (burnerNumber: number) => void // 웍 비우기 (음식 버리기)
   toggleBurner: (burnerNumber: number) => void
   serve: (burnerNumber: number) => boolean
   logAction: (action: Omit<ActionLog, 'timestamp' | 'elapsedSeconds'>) => void
@@ -162,6 +192,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   actionLogs: [],
   burnerUsageHistory: [],
   usedMenuNames: new Set(),
+  lastServeError: null,
   
   fridgeViewState: 'CLOSED',
   selectedFridgePosition: null,
@@ -181,6 +212,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       elapsedSeconds: 0,
       completedMenus: 0,
       usedMenuNames: new Set(),
+      lastServeError: null,
     }),
 
   reset: () =>
@@ -203,12 +235,67 @@ export const useGameStore = create<GameStore>((set, get) => ({
       actionLogs: [],
       burnerUsageHistory: [],
       usedMenuNames: new Set(),
+      lastServeError: null,
       fridgeViewState: 'CLOSED',
       selectedFridgePosition: null,
       selectedFloor: null,
     }),
 
   tickTimer: () => set((s) => ({ elapsedSeconds: s.elapsedSeconds + 1 })),
+
+  checkMenuTimers: () => {
+    const { menuQueue, elapsedSeconds, woks } = get()
+    const now = elapsedSeconds
+    
+    menuQueue.forEach((order) => {
+      const elapsedTime = (now - order.enteredAt) * 1000 // 밀리초로 변환
+      
+      // 15분 초과 시 자동 취소
+      if (elapsedTime > MENU_TIMER.CANCEL_TIME && order.status !== 'COMPLETED') {
+        console.warn(`⏰ 메뉴 자동 취소: ${order.menuName} (${Math.floor(elapsedTime / 60000)}분 경과)`)
+        
+        // 해당 메뉴를 조리 중이던 웍 정보 찾기
+        const assignedWok = woks.find((w) => w.currentOrderId === order.id)
+        
+        // 웍에서 메뉴 제거 (조리 중이었다면)
+        if (assignedWok) {
+          set((s) => ({
+            woks: s.woks.map((w) =>
+              w.burnerNumber === assignedWok.burnerNumber
+                ? {
+                    ...w,
+                    state: 'DIRTY' as const,
+                    currentMenu: null,
+                    currentOrderId: null,
+                    currentStep: 0,
+                    stepStartTime: null,
+                    isOn: false,
+                    burnerOnSince: null,
+                    addedIngredients: [],
+                    recipeErrors: 0,
+                    totalSteps: 0,
+                  }
+                : w
+            ),
+          }))
+        }
+        
+        // 메뉴큐에서 제거
+        set((s) => ({
+          menuQueue: s.menuQueue.filter((o) => o.id !== order.id),
+        }))
+        
+        // 로그 기록
+        get().logAction({
+          actionType: 'MENU_CANCELLED',
+          menuName: order.menuName,
+          burnerNumber: assignedWok?.burnerNumber,
+          isCorrect: false,
+          message: `❌ ${order.menuName} 15분 초과로 자동 취소`,
+        })
+      }
+    })
+  },
 
   addMenuToQueue: (menuName) => {
     const id = `order-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -238,6 +325,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const recipe = getRecipeByMenuName(order.menuName)
     if (!recipe) return
 
+    const totalSteps = recipe.steps?.length || 0
+
     set((s) => ({
       woks: s.woks.map((w) =>
         w.burnerNumber === burnerNumber
@@ -251,6 +340,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
               burnerOnSince: Date.now(),
               addedIngredients: [], // 초기화
               stirFryCount: 0, // 볶기 횟수 초기화
+              recipeErrors: 0, // 오류 횟수 초기화
+              totalSteps: totalSteps, // 총 스텝 수 저장
             }
           : w
       ),
@@ -279,7 +370,50 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((s) => ({
       woks: s.woks.map((wok) => {
         let newTemp = wok.temperature
+        let newWaterTemp = wok.waterTemperature
+        let newWaterBoilStartTime = wok.waterBoilStartTime
+        let newIsBoiling = wok.isBoiling
 
+        if (wok.hasWater) {
+          // 물이 있을 때 - 물 온도 계산
+          if (wok.isOn && newWaterTemp < WOK_TEMP.WATER_BOIL) {
+            // 100도까지 천천히 가열 (30초)
+            newWaterTemp = Math.min(newWaterTemp + WOK_TEMP.WATER_HEAT_RATE, WOK_TEMP.WATER_BOIL)
+            
+            // 100도 도달 시
+            if (newWaterTemp >= WOK_TEMP.WATER_BOIL && !newWaterBoilStartTime) {
+              newWaterBoilStartTime = now
+              console.log(`화구${wok.burnerNumber}: 💧 물이 100°C 도달!`)
+            }
+          }
+          
+          // 100도에서 5초 유지하면 끓기 시작
+          if (newWaterTemp >= WOK_TEMP.WATER_BOIL && newWaterBoilStartTime) {
+            const boilDuration = now - newWaterBoilStartTime
+            if (boilDuration >= WOK_TEMP.WATER_BOIL_DURATION && !newIsBoiling) {
+              newIsBoiling = true
+              console.log(`화구${wok.burnerNumber}: 💦 물이 끓기 시작!`)
+            }
+          }
+          
+          // 불이 꺼지면 물도 식음
+          if (!wok.isOn) {
+            newWaterTemp = Math.max(newWaterTemp - WOK_TEMP.COOL_RATE, WOK_TEMP.AMBIENT)
+            if (newWaterTemp < WOK_TEMP.WATER_BOIL) {
+              newWaterBoilStartTime = null
+              newIsBoiling = false
+            }
+          }
+          
+          return {
+            ...wok,
+            waterTemperature: newWaterTemp,
+            waterBoilStartTime: newWaterBoilStartTime,
+            isBoiling: newIsBoiling,
+          }
+        }
+
+        // 물이 없을 때 - 일반 온도 계산
         if (wok.isOn) {
           // 불 세기별 가열률 적용
           const heatMultiplier = WOK_TEMP.HEAT_MULTIPLIER[wok.heatLevel as 1 | 2 | 3] || 1.0
@@ -298,8 +432,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
         // 온도 기반 상태 자동 전환
         let newState = wok.state
+        
+        // WET 상태에서 180도 도달 시 CLEAN으로 자동 변경
+        if (wok.state === 'WET' && newTemp >= 180) {
+          newState = 'CLEAN'
+          console.log(`화구${wok.burnerNumber}: ✨ 웍이 말랐습니다! (온도: ${Math.round(newTemp)}°C)`)
+        }
+        
         if (newTemp >= WOK_TEMP.BURNED && wok.state !== 'BURNED') {
-          // 260°C 이상 → 타버림
+          // 400°C 이상 → 타버림
           newState = 'BURNED'
           console.warn(`화구${wok.burnerNumber}: 🔥 타버림! (온도: ${Math.round(newTemp)}°C)`)
           
@@ -331,15 +472,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
             isStirFrying: false,
             stirFryStartTime: null,
             stirFryCount: 0,
+            hasWater: false,
+            waterTemperature: WOK_TEMP.AMBIENT,
+            waterBoilStartTime: null,
+            isBoiling: false,
           }
         } else if (newTemp >= WOK_TEMP.OVERHEATING && newTemp < WOK_TEMP.BURNED) {
-          // 240~260°C → 과열
+          // 360~400°C → 과열
           if (wok.state !== 'OVERHEATING' && wok.state !== 'BURNED') {
             newState = 'OVERHEATING'
             console.warn(`화구${wok.burnerNumber}: ⚠️ 과열! (온도: ${Math.round(newTemp)}°C)`)
           }
         } else if (newTemp < WOK_TEMP.OVERHEATING && wok.state === 'OVERHEATING') {
-          // 240°C 미만 → 정상 복귀
+          // 360°C 미만 → 정상 복귀
           newState = 'CLEAN'
           console.log(`화구${wok.burnerNumber}: ✅ 정상 복귀 (온도: ${Math.round(newTemp)}°C)`)
         }
@@ -429,6 +574,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 isStirFrying: false,
                 stirFryStartTime: null,
                 stirFryCount: 0, // 볶기 횟수 초기화
+                hasWater: false, // 물 제거
+                waterTemperature: WOK_TEMP.AMBIENT,
+                waterBoilStartTime: null,
+                isBoiling: false,
               }
             : w
         ),
@@ -481,8 +630,63 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }))
   },
 
+  emptyWok: (burnerNumber) => {
+    const { woks } = get()
+    const wok = woks.find((w) => w.burnerNumber === burnerNumber)
+    if (!wok || !wok.currentMenu) return
+
+    const menuName = wok.currentMenu
+    const orderId = wok.currentOrderId
+
+    console.log(`화구${burnerNumber}: 🗑️ 웍 비우기 - ${menuName} 버림`)
+
+    // 웍 상태를 DIRTY로 변경하고 메뉴 정보 초기화
+    set((s) => ({
+      woks: s.woks.map((w) =>
+        w.burnerNumber === burnerNumber
+          ? {
+              ...w,
+              state: 'DIRTY' as const,
+              currentMenu: null,
+              currentOrderId: null,
+              currentStep: 0,
+              stepStartTime: null,
+              isOn: false,
+              burnerOnSince: null,
+              addedIngredients: [],
+              temperature: WOK_TEMP.AMBIENT,
+              isStirFrying: false,
+              stirFryStartTime: null,
+              recipeErrors: 0,
+              totalSteps: 0,
+              hasWater: false,
+              waterTemperature: WOK_TEMP.AMBIENT,
+              waterBoilStartTime: null,
+              isBoiling: false,
+            }
+          : w
+      ),
+      // 메뉴를 다시 WAITING 상태로 되돌림 (재배정 가능)
+      menuQueue: orderId
+        ? s.menuQueue.map((o) =>
+            o.id === orderId
+              ? { ...o, status: 'WAITING' as const, assignedBurner: null }
+              : o
+          )
+        : s.menuQueue,
+    }))
+
+    get().logAction({
+      actionType: 'EMPTY_WOK',
+      menuName,
+      burnerNumber,
+      isCorrect: true,
+      message: `화구${burnerNumber}: 웍 비우기 - ${menuName} 버림`,
+    })
+  },
+
   serve: (burnerNumber) => {
-    const { woks, completedMenus, targetMenus, getRecipeByMenuName } = get()
+    const { woks, completedMenus, targetMenus, getRecipeByMenuName, level, elapsedSeconds, menuQueue } = get()
     const wok = woks.find((w) => w.burnerNumber === burnerNumber)
     if (!wok || !wok.currentMenu || !wok.currentOrderId) return false
 
@@ -498,6 +702,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 서빙 전에 필요한 정보 저장
     const completedOrderId = wok.currentOrderId
     const completedMenuName = wok.currentMenu
+    const recipeErrors = wok.recipeErrors
+    const totalSteps = wok.totalSteps
+    const isBeginnerLevel = level === 'BEGINNER'
+    
+    // 주문 시간 정보 가져오기
+    const order = menuQueue.find((o) => o.id === completedOrderId)
+    const cookingTime = order ? (elapsedSeconds - order.enteredAt) * 1000 : 0 // 밀리초
+    const timeScore = calculateTimeScore(cookingTime)
+
+    // 레시피 정확도 계산 (신입이 아닐 때만)
+    let recipeAccuracy = 100
+    if (!isBeginnerLevel && totalSteps > 0) {
+      recipeAccuracy = Math.max(0, Math.round(((totalSteps - recipeErrors) / totalSteps) * 100))
+    }
+    
+    // 레시피 정확도를 시간 점수에 반영
+    // 레시피 오류가 있으면 10~15분 사이 점수 (30점)로 처리
+    const finalRecipeScore = recipeErrors > 0 ? 30 : 100
+    
+    // 최종 점수: 시간 점수와 레시피 점수의 평균
+    const finalScore = Math.round((timeScore.score + finalRecipeScore) / 2)
 
     set((s) => ({
       menuQueue: s.menuQueue.map((o) =>
@@ -507,7 +732,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ),
       woks: s.woks.map((w) =>
         w.burnerNumber === burnerNumber
-          ? { ...w, state: 'DIRTY' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [] }
+          ? { ...w, state: 'DIRTY' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [], recipeErrors: 0, totalSteps: 0 }
           : w
       ),
       completedMenus: s.completedMenus + 1,
@@ -518,8 +743,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
       menuName: completedMenuName,
       burnerNumber,
       isCorrect: true,
-      message: `${completedMenuName} 서빙 완료`,
+      message: `${completedMenuName} 서빙 완료 (${timeScore.message}, 레시피: ${recipeAccuracy}%, 최종: ${finalScore}점)`,
     })
+
+    // 신입이 아니고 오류가 있을 때 잠깐 알림 표시
+    if (!isBeginnerLevel && (recipeErrors > 0 || timeScore.tier !== 'perfect')) {
+      const errorMessage = recipeErrors > 0 
+        ? `⚠️ 레시피 오류: ${recipeErrors}/${totalSteps} (정확도: ${recipeAccuracy}%)\n${timeScore.message}\n최종 점수: ${finalScore}점`
+        : `${timeScore.message}\n최종 점수: ${finalScore}점`
+      console.warn(`화구${burnerNumber}: ${errorMessage}`)
+      
+      // UI에 표시하기 위해 임시 상태 저장
+      set(() => ({
+        lastServeError: {
+          burnerNumber,
+          menuName: completedMenuName,
+          errors: recipeErrors,
+          totalSteps,
+          accuracy: recipeAccuracy,
+          timestamp: Date.now(),
+        }
+      }))
+      
+      // 3초 후 에러 메시지 제거
+      setTimeout(() => {
+        set(() => ({
+          lastServeError: null
+        }))
+      }, 3000)
+    }
 
     // 3초 후 완료된 주문카드 제거 (orderId로 정확하게 매칭)
     setTimeout(() => {
@@ -793,13 +1045,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   validateAndAdvanceIngredient: (burnerNumber, sku, amount, isSeasoning) => {
-    const { woks, getRecipeByMenuName, getCurrentStepIngredients, logAction } = get()
+    const { woks, getRecipeByMenuName, getCurrentStepIngredients, logAction, level } = get()
     const wok = woks.find((w) => w.burnerNumber === burnerNumber)
     if (!wok || !wok.currentMenu) return false
 
     const recipe = getRecipeByMenuName(wok.currentMenu)
     if (!recipe?.steps?.length) return false
     const reqs = getCurrentStepIngredients(wok.currentMenu, wok.currentStep)
+    
+    const isBeginnerLevel = level === 'BEGINNER'
     
     // 이미 추가한 재료는 다시 추가 불가
     if (wok.addedIngredients.includes(sku)) {
@@ -835,7 +1089,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       message: isCorrect ? `화구${burnerNumber}: 재료 투입 정확` : `화구${burnerNumber}: 재료 투입 오류`,
     })
 
-    if (!isCorrect) return false
+    // 신입 단계에서는 틀리면 중단
+    if (isBeginnerLevel && !isCorrect) {
+      return false
+    }
+    
+    // 신입이 아닌 경우, 틀려도 오류 카운트만 증가하고 진행
+    const errorIncrement = isCorrect ? 0 : 1
 
     // 재료 투입 시 온도 하락 (재료 특성에 따라)
     let tempDrop = WOK_TEMP.COOLING.SEASONING // 기본값
@@ -887,6 +1147,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
                 addedIngredients: [], // 다음 스텝 시작 시 초기화
                 temperature: newTemp, // 온도 반영
+                recipeErrors: w.recipeErrors + errorIncrement, // 오류 누적
               }
             : w
         ),
@@ -903,6 +1164,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 addedIngredients: newAddedIngredients,
                 burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
                 temperature: newTemp, // 온도 반영
+                recipeErrors: w.recipeErrors + errorIncrement, // 오류 누적
               }
             : w
         ),
@@ -913,10 +1175,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   validateAndAdvanceAction: (burnerNumber, actionType) => {
-    const { woks, getRecipeByMenuName, logAction } = get()
+    const { woks, getRecipeByMenuName, logAction, level } = get()
     const wok = woks.find((w) => w.burnerNumber === burnerNumber)
     if (!wok || !wok.currentMenu) return { ok: false }
 
+    const isBeginnerLevel = level === 'BEGINNER'
     const recipe = getRecipeByMenuName(wok.currentMenu)
     const sortedSteps = recipe?.steps ? [...recipe.steps].sort((a, b) => a.step_number - b.step_number) : []
     const step = sortedSteps[wok.currentStep]
@@ -928,8 +1191,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       totalSteps: sortedSteps.length,
       step,
       actionType,
+      isBeginnerLevel,
     })
     
+    // 현재 스텝이 ACTION 타입이 아닐 때
     if (!step || step.step_type !== 'ACTION') {
       logAction({
         actionType,
@@ -938,7 +1203,45 @@ export const useGameStore = create<GameStore>((set, get) => ({
         isCorrect: false,
         message: `화구${burnerNumber}: 잘못된 액션 (현재 단계: ${step?.step_type ?? '없음'})`,
       })
-      return { ok: false }
+      
+      // 신입 단계에서는 차단
+      if (isBeginnerLevel) {
+        return { ok: false }
+      }
+      
+      // 신입이 아니면 물리적 효과만 적용하고 스텝은 진행 안함
+      let tempDrop = 0
+      let addWater = false
+      
+      if (actionType === 'FLIP') {
+        tempDrop = WOK_TEMP.ACTION_TEMP.FLIP
+      } else if (actionType === 'ADD_WATER') {
+        addWater = true
+      }
+      
+      const newTemp = Math.max(WOK_TEMP.AMBIENT, wok.temperature - tempDrop)
+      
+      if (addWater) {
+        console.log(`화구${burnerNumber}: 💧 물 추가 (잘못된 타이밍이지만 신입 아님) - 온도 25°C로 리셋`)
+      }
+      
+      set((s) => ({
+        woks: s.woks.map((w) =>
+          w.burnerNumber === burnerNumber
+            ? { 
+                ...w,
+                temperature: addWater ? WOK_TEMP.AMBIENT : newTemp,
+                hasWater: addWater,
+                waterTemperature: addWater ? WOK_TEMP.AMBIENT : w.waterTemperature,
+                waterBoilStartTime: null,
+                isBoiling: false,
+                recipeErrors: w.recipeErrors + 1, // 오류 카운트
+              }
+            : w
+        ),
+      }))
+      
+      return { ok: true } // 신입이 아니면 물리적 효과는 적용됨
     }
 
     const isCorrectAction = step.action_type === actionType
@@ -976,12 +1279,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
           message: `화구${burnerNumber}: 볶기 완료 (레시피 진행)`,
         })
 
-        if (!timingCorrect) {
+        // 신입 단계에서만 타이밍 오류 시 타버림 처리
+        if (isBeginnerLevel && !timingCorrect) {
           const orderId = wok.currentOrderId
           set((s) => ({
             woks: s.woks.map((w) =>
               w.burnerNumber === burnerNumber 
-                ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [] } 
+                ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [], recipeErrors: 0, totalSteps: 0 } 
                 : w
             ),
             menuQueue: orderId 
@@ -1005,6 +1309,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                   stepStartTime: Date.now(),
                   burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
                   addedIngredients: [], // 다음 스텝 시작 시 재료 목록 초기화
+                  recipeErrors: w.recipeErrors + (timingCorrect ? 0 : 1), // 타이밍 오류 카운트
                 }
               : w
           ),
@@ -1027,14 +1332,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
       message: isCorrectAction && timingCorrect ? `화구${burnerNumber}: ${actionType} 완료` : `화구${burnerNumber}: 액션 오류`,
     })
 
-    if (!isCorrectAction) return { ok: false }
+    // 신입 단계에서는 틀린 액션 시 중단
+    if (isBeginnerLevel && !isCorrectAction) {
+      return { ok: false }
+    }
     
-    // 액션별 온도 하락
+    // 액션별 온도 하락 및 물 시스템
     let tempDrop = 0
+    let addWater = false
+    
     if (actionType === 'FLIP') {
       tempDrop = WOK_TEMP.ACTION_TEMP.FLIP
     } else if (actionType === 'ADD_WATER') {
-      tempDrop = WOK_TEMP.ACTION_TEMP.ADD_WATER
+      addWater = true // 물 추가 모드
     }
     
     const newTemp = Math.max(WOK_TEMP.AMBIENT, wok.temperature - tempDrop)
@@ -1042,12 +1352,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
       console.log(`화구${burnerNumber}: ${actionType} 실행으로 온도 하락 ${Math.round(wok.temperature)}°C → ${Math.round(newTemp)}°C (-${tempDrop}°C)`)
     }
     
-    if (!timingCorrect) {
+    if (addWater) {
+      console.log(`화구${burnerNumber}: 💧 물 추가 - 온도 25°C로 리셋, 물 시스템 활성화`)
+    }
+    
+    // 신입 단계에서만 타이밍 오류 시 타버림 처리
+    if (isBeginnerLevel && !timingCorrect) {
       const orderId = wok.currentOrderId
       set((s) => ({
         woks: s.woks.map((w) =>
           w.burnerNumber === burnerNumber 
-            ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [] } 
+            ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [], recipeErrors: 0, totalSteps: 0 } 
             : w
         ),
         menuQueue: orderId 
@@ -1061,22 +1376,48 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return { ok: false, burned: true }
     }
 
-    // 액션 성공 시 타이머 리셋
-    set((s) => ({
-      woks: s.woks.map((w) =>
-        w.burnerNumber === burnerNumber
-          ? { 
-              ...w, 
-              currentStep: w.currentStep + 1, 
-              stepStartTime: Date.now(),
-              burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
-              temperature: newTemp,
-              addedIngredients: [], // 다음 스텝 시작 시 재료 목록 초기화
-            }
-          : w
-      ),
-    }))
-    return { ok: true }
+    // 정확한 액션일 때만 스텝 진행, 틀렸을 때는 오류 카운트만 (신입 아닐 때)
+    if (isCorrectAction) {
+      // 액션 성공 시 타이머 리셋하고 다음 스텝으로
+      set((s) => ({
+        woks: s.woks.map((w) =>
+          w.burnerNumber === burnerNumber
+            ? { 
+                ...w, 
+                currentStep: w.currentStep + 1, 
+                stepStartTime: Date.now(),
+                burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
+                temperature: addWater ? WOK_TEMP.AMBIENT : newTemp,
+                addedIngredients: [], // 다음 스텝 시작 시 재료 목록 초기화
+                hasWater: addWater,
+                waterTemperature: addWater ? WOK_TEMP.AMBIENT : w.waterTemperature,
+                waterBoilStartTime: null,
+                isBoiling: false,
+                recipeErrors: w.recipeErrors + (!timingCorrect ? 1 : 0), // 타이밍 오류만 카운트
+              }
+            : w
+        ),
+      }))
+      return { ok: true }
+    } else {
+      // 틀린 액션이지만 신입이 아니면 오류 카운트만 하고 물/온도 효과는 적용
+      set((s) => ({
+        woks: s.woks.map((w) =>
+          w.burnerNumber === burnerNumber
+            ? { 
+                ...w,
+                temperature: addWater ? WOK_TEMP.AMBIENT : newTemp,
+                hasWater: addWater,
+                waterTemperature: addWater ? WOK_TEMP.AMBIENT : w.waterTemperature,
+                waterBoilStartTime: null,
+                isBoiling: false,
+                recipeErrors: w.recipeErrors + 1, // 틀린 액션 카운트
+              }
+            : w
+        ),
+      }))
+      return { ok: true } // 신입이 아니면 틀려도 진행
+    }
   },
   
   // 4호박스 뷰 액션 구현

@@ -4,7 +4,9 @@ export default function SinkArea() {
   const { woks, washWok } = useGameStore()
 
   return (
-    <div className="w-full p-4 bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200 border-2 border-gray-300 rounded-xl shadow-xl"
+    <>
+      {/* Desktop 버전 - 기존 코드 유지 */}
+      <div className="hidden lg:block w-full p-4 bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200 border-2 border-gray-300 rounded-xl shadow-xl"
          style={{
            backgroundImage: `
              linear-gradient(135deg, 
@@ -57,5 +59,14 @@ export default function SinkArea() {
         })}
       </div>
     </div>
+
+      {/* Mobile 버전 - 간소화 (아이콘 + "sink" 텍스트만) */}
+      <div className="flex lg:hidden flex-col items-center justify-center">
+        <div className="flex flex-col items-center justify-center p-1 bg-gradient-to-br from-gray-200 to-gray-300 rounded-lg border border-gray-400 shadow-md w-[30px] h-[30px]">
+          <div className="text-base filter drop-shadow-lg">💧</div>
+        </div>
+        <div className="text-[8px] font-bold text-gray-600 uppercase tracking-wider mt-0.5">sink</div>
+      </div>
+    </>
   )
 }
