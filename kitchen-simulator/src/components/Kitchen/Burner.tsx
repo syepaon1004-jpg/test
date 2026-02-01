@@ -218,15 +218,19 @@ export default function Burner({ burnerNumber }: BurnerProps) {
           )}
           
           {/* 스모킹 포인트 효과 */}
-          {wok.temperature >= WOK_TEMP.SMOKING_POINT && wok.state !== 'BURNED' && !wok.isStirFrying && (
-            <motion.div
-              animate={{ opacity: [0.3, 0.7, 0.4], y: [-10, -30, -50] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-              className="absolute -top-10 text-4xl z-5"
-            >
-              💨
-            </motion.div>
-          )}
+          <AnimatePresence>
+            {wok.temperature >= WOK_TEMP.SMOKING_POINT && wok.state !== 'BURNED' && !wok.isStirFrying && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: [0.3, 0.7, 0.4], y: [-10, -30, -50] }}
+                exit={{ opacity: 0, y: -50 }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+                className="absolute -top-10 text-4xl z-5"
+              >
+                💨
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
         <div className={`text-xs mt-1 font-bold px-2 py-1 rounded ${
           wok.state === 'BURNED' ? 'text-white bg-red-600/90 animate-bounce' : 
