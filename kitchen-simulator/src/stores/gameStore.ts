@@ -945,13 +945,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const limitMs = (step.time_limit_seconds ?? 999) * 1000
     const timingCorrect = !wok.stepStartTime || Date.now() - wok.stepStartTime <= limitMs
 
-    // 볶기 액션 처리 - 첫 번째는 레시피 진행, 두 번째부터는 온도 조절용
+    // 볶기 액션 처리 - 현재 스텝이 볶기면 레시피 진행, 아니면 온도 조절용
     if (actionType === 'STIR_FRY') {
-      if (wok.stirFryCount === 0 && isCorrectAction) {
-        // 첫 번째 볶기 - 레시피 진행
+      // 온도 하락 (1초 후 적용)
+      setTimeout(() => {
         const tempDrop = WOK_TEMP.ACTION_TEMP.STIR_FRY
-        const newTemp = Math.max(WOK_TEMP.AMBIENT, wok.temperature - tempDrop)
-        
+        const currentWok = get().woks.find((w) => w.burnerNumber === burnerNumber)
+        if (currentWok) {
+          const newTemp = Math.max(WOK_TEMP.AMBIENT, currentWok.temperature - tempDrop)
+          console.log(`화구${burnerNumber}: 볶기 온도 하락 (1초 후) ${Math.round(currentWok.temperature)}°C → ${Math.round(newTemp)}°C`)
+          
+          set((s) => ({
+            woks: s.woks.map((w) =>
+              w.burnerNumber === burnerNumber
+                ? { ...w, temperature: newTemp }
+                : w
+            ),
+          }))
+        }
+      }, 1000)
+      
+      if (isCorrectAction) {
+        // 현재 스텝이 볶기 - 레시피 진행
         logAction({
           actionType,
           menuName: wok.currentMenu,
@@ -966,7 +981,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           set((s) => ({
             woks: s.woks.map((w) =>
               w.burnerNumber === burnerNumber 
-                ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [], stirFryCount: 0 } 
+                ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [] } 
                 : w
             ),
             menuQueue: orderId 
@@ -989,8 +1004,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
                   currentStep: w.currentStep + 1, 
                   stepStartTime: Date.now(),
                   burnerOnSince: w.isOn ? Date.now() : w.burnerOnSince,
-                  temperature: newTemp,
-                  stirFryCount: w.stirFryCount + 1,
                   addedIngredients: [], // 다음 스텝 시작 시 재료 목록 초기화
                 }
               : w
@@ -998,19 +1011,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }))
         return { ok: true }
       } else {
-        // 두 번째 이상 볶기 - 온도 조절용
-        const tempDrop = WOK_TEMP.ACTION_TEMP.STIR_FRY
-        const newTemp = Math.max(WOK_TEMP.AMBIENT, wok.temperature - tempDrop)
-        
-        console.log(`화구${burnerNumber}: 추가 볶기 (온도 조절용) ${Math.round(wok.temperature)}°C → ${Math.round(newTemp)}°C`)
-        
-        set((s) => ({
-          woks: s.woks.map((w) =>
-            w.burnerNumber === burnerNumber
-              ? { ...w, temperature: newTemp, stirFryCount: w.stirFryCount + 1 }
-              : w
-          ),
-        }))
+        // 현재 스텝이 볶기가 아님 - 온도 조절용
+        console.log(`화구${burnerNumber}: 추가 볶기 (온도 조절용)`)
         return { ok: true }
       }
     }
@@ -1045,7 +1047,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set((s) => ({
         woks: s.woks.map((w) =>
           w.burnerNumber === burnerNumber 
-            ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [], stirFryCount: 0 } 
+            ? { ...w, state: 'BURNED' as const, currentMenu: null, currentOrderId: null, currentStep: 0, stepStartTime: null, isOn: false, burnerOnSince: null, addedIngredients: [] } 
             : w
         ),
         menuQueue: orderId 

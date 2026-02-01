@@ -39,10 +39,10 @@ export default function Burner({ burnerNumber }: BurnerProps) {
       // 볶기 액션 검증
       const result = validateAndAdvanceAction(burnerNumber, actionType)
       
-      // 볶기 종료 (2초 후)
+      // 볶기 애니메이션 1초 후 종료
       setTimeout(() => {
         stopStirFry(burnerNumber)
-      }, 2000)
+      }, 1000)
       
       if (result.burned) {
         // 타버림 처리는 validateAndAdvanceAction에서 함
