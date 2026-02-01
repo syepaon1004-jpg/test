@@ -65,9 +65,9 @@ export default function Burner({ burnerNumber }: BurnerProps) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-2 relative pt-6">
+    <div className="flex flex-col items-center gap-2 relative pt-4">
       {/* 온도 게이지 (화구 위) */}
-      <div className="w-full max-w-[180px] mb-2">
+      <div className="w-full max-w-[180px] mb-1">
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs font-bold text-gray-700">🌡️ 온도</span>
           <span className={`text-sm font-bold px-2 py-0.5 rounded ${
@@ -106,7 +106,7 @@ export default function Burner({ burnerNumber }: BurnerProps) {
         </div>
         
         {/* 온도 구간 레이블 */}
-        <div className="flex justify-between mt-1 text-[9px] text-gray-500 font-medium">
+        <div className="flex justify-between mt-0.5 text-[9px] text-gray-500 font-medium">
           <span>{WOK_TEMP.AMBIENT}°</span>
           <span className="text-yellow-600">{WOK_TEMP.MIN_STIR_FRY}°</span>
           <span className="text-orange-600">{WOK_TEMP.SMOKING_POINT}°</span>
@@ -115,18 +115,18 @@ export default function Burner({ burnerNumber }: BurnerProps) {
         
         {/* 상태 표시 */}
         {wok.temperature >= WOK_TEMP.BURNED && (
-          <div className="text-center mt-1 text-xs font-bold text-red-600 animate-bounce">
+          <div className="text-center mt-0.5 text-xs font-bold text-red-600 animate-bounce">
             💀 타버림 위험!
           </div>
         )}
         {wok.temperature >= WOK_TEMP.OVERHEATING && wok.temperature < WOK_TEMP.BURNED && (
-          <div className="text-center mt-1 text-xs font-bold text-orange-600 animate-pulse">
-            ⚠️ 과열 중! 온도를 낮추세요
+          <div className="text-center mt-0.5 text-xs font-bold text-orange-600 animate-pulse">
+            ⚠️ 과열 중!
           </div>
         )}
         {wok.temperature >= WOK_TEMP.SMOKING_POINT && wok.temperature < WOK_TEMP.OVERHEATING && (
-          <div className="text-center mt-1 text-xs font-bold text-orange-500">
-            💨 스모킹 포인트
+          <div className="text-center mt-0.5 text-xs font-bold text-orange-500">
+            💨 스모킹
           </div>
         )}
       </div>
@@ -135,7 +135,7 @@ export default function Burner({ burnerNumber }: BurnerProps) {
       <motion.div
         animate={wokAnimation[wok.position]}
         transition={{ duration: 0.8, ease: 'easeInOut' }}
-        className="absolute top-0 z-10 flex flex-col items-center"
+        className="absolute top-[90px] z-10 flex flex-col items-center"
       >
         <div className={`w-[150px] h-[150px] rounded-full border-4 flex items-center justify-center shadow-xl transition relative ${
           wok.state === 'BURNED' 
